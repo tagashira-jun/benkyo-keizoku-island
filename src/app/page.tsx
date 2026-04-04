@@ -11,6 +11,8 @@ import Achievements from "@/components/Achievements";
 import ReportGenerator from "@/components/ReportGenerator";
 import CategoryManager from "@/components/CategoryManager";
 import AchievementNotification from "@/components/AchievementNotification";
+import BgmPlayer from "@/components/BgmPlayer";
+import GuideModal, { useGuideModal } from "@/components/GuideModal";
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "record", label: "記録", icon: "✏️" },
@@ -44,6 +46,8 @@ export default function Home() {
     clearAchievementNotification,
   } = useGameState();
 
+  const guide = useGuideModal();
+
   if (!loaded || !playerState) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-950">
@@ -65,11 +69,22 @@ export default function Home() {
         onDismiss={clearAchievementNotification}
       />
 
+      {/* Guide Modal */}
+      <GuideModal open={guide.open} onClose={guide.close} />
+
       {/* App Header */}
-      <header className="bg-gray-900 border-b border-gray-800 px-4 py-3 text-center">
+      <header className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between">
+        <button
+          onClick={guide.show}
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors text-sm"
+          title="使い方"
+        >
+          ?
+        </button>
         <h1 className="text-lg font-bold text-white tracking-wider">
           🏝️ 知識の島
         </h1>
+        <BgmPlayer />
       </header>
 
       {/* Level & Status Strip */}
@@ -147,6 +162,7 @@ export default function Home() {
             logs={logs}
             todayMinutes={todayMinutes}
             onRecord={addRecord}
+            onAddCategory={addCategory}
           />
         )}
         {activeTab === "achievements" && (

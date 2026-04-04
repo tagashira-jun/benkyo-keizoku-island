@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Category, Log } from "@/lib/types";
+import { Category, Log, BUILDING_TYPES } from "@/lib/types";
 import { getCategoryXP } from "@/lib/gameLogic";
 import ComboBox from "./ComboBox";
 
@@ -10,7 +10,21 @@ interface RecordPanelProps {
   logs: Log[];
   todayMinutes: number;
   onRecord: (categoryId: string, content: string, minutes: number) => void;
+  onAddCategory: (label: string, icon: string, buildingType: string) => void;
 }
+
+const QUICK_ICONS = ["💻", "📺", "📝", "📚", "🎯", "🧪", "🎨", "🎵", "🏃", "🔧", "📊", "🌐", "✏️", "🧠"];
+
+const BUILDING_LABELS: Record<string, string> = {
+  "server-tower": "サーバー塔",
+  library: "図書館",
+  "magic-tower": "魔法塔",
+  workshop: "工房",
+  observatory: "天文台",
+  shrine: "神社",
+  market: "市場",
+  arena: "闘技場",
+};
 
 function formatTime(minutes: number): string {
   const h = Math.floor(minutes / 60);
@@ -20,27 +34,32 @@ function formatTime(minutes: number): string {
   return `${h}時間${m}分`;
 }
 
-export default function RecordPanel({ categories, logs, todayMinutes, onRecord }: RecordPanelProps) {
+export default function RecordPanel({ categories, logs, todayMinutes, onRecord, onAddCategory }: RecordPanelProps) {
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [addedMinutes, setAddedMinutes] = useState(0);
   const [showConfirm, setShowConfirm] = useState(false);
 
+  // Inline add category
+  const [isAdding, setIsAdding] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [newIcon, setNewIcon] = useState("📚");
+  const [newBuilding, setNewBuilding] = useState("");
+
   const selectedCat = categories.find((c) => c.id === selectedCatId);
 
-  // Sort content history by frequency
   const contentOptions = selectedCat
     ? sortByFrequency(selectedCat.contentHistory, logs, selectedCat.id)
     : [];
 
+  const usedBuildings = new Set(categories.map((c) => c.buildingType));
+  const availableBuildings = BUILDING_TYPES.filter((b) => !usedBuildings.has(b));
+
   const handleAddTime = useCallback(() => {
     if (!selectedCatId) return;
-    const newMinutes = addedMinutes + 15;
-    setAddedMinutes(newMinutes);
-
-    // Auto-commit after a short delay (debounce)
+    setAddedMinutes((prev) => prev + 15);
     setShowConfirm(true);
-  }, [selectedCatId, addedMinutes]);
+  }, [selectedCatId]);
 
   const handleConfirm = useCallback(() => {
     if (!selectedCatId || addedMinutes <= 0) return;
@@ -54,6 +73,20 @@ export default function RecordPanel({ categories, logs, todayMinutes, onRecord }
     setAddedMinutes(0);
     setShowConfirm(false);
   }, []);
+
+  const handleOpenAdd = () => {
+    setIsAdding(true);
+    setNewLabel("");
+    setNewIcon("📚");
+    setNewBuilding(availableBuildings[0] || "workshop");
+  };
+
+  const handleAddCategory = () => {
+    if (!newLabel.trim()) return;
+    onAddCategory(newLabel.trim(), newIcon, newBuilding);
+    setIsAdding(false);
+    setNewLabel("");
+  };
 
   return (
     <div className="bg-gray-900/90 backdrop-blur rounded-t-2xl p-4 space-y-4">
@@ -69,6 +102,7 @@ export default function RecordPanel({ categories, logs, todayMinutes, onRecord }
                 setContent("");
                 setAddedMinutes(0);
                 setShowConfirm(false);
+                setIsAdding(false);
               }}
               className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
                 selectedCatId === cat.id
@@ -83,11 +117,86 @@ export default function RecordPanel({ categories, logs, todayMinutes, onRecord }
               </span>
             </button>
           ))}
+          {/* Add category button */}
+          <button
+            onClick={handleOpenAdd}
+            className="px-4 py-2 rounded-xl text-sm font-medium border-2 border-dashed border-gray-600 text-gray-400 hover:border-gray-400 hover:text-gray-200 transition-all"
+          >
+            ＋ 追加
+          </button>
         </div>
       </div>
 
+      {/* Inline Add Category Form */}
+      {isAdding && (
+        <div className="bg-gray-800 rounded-xl p-4 space-y-3">
+          <div className="text-sm text-gray-300 font-medium">新しいカテゴリ</div>
+          {/* Icon picker */}
+          <div className="flex flex-wrap gap-1">
+            {QUICK_ICONS.map((ic) => (
+              <button
+                key={ic}
+                onClick={() => setNewIcon(ic)}
+                className={`text-lg p-1 rounded ${
+                  newIcon === ic ? "bg-blue-600" : "hover:bg-gray-700"
+                }`}
+              >
+                {ic}
+              </button>
+            ))}
+          </div>
+          {/* Name */}
+          <input
+            type="text"
+            value={newLabel}
+            onChange={(e) => setNewLabel(e.target.value)}
+            placeholder="カテゴリ名（例：読書、英語学習…）"
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-400"
+            autoFocus
+          />
+          {/* Building type */}
+          <div>
+            <div className="text-xs text-gray-400 mb-1">建物タイプ</div>
+            <div className="flex flex-wrap gap-1.5">
+              {availableBuildings.map((b) => (
+                <button
+                  key={b}
+                  onClick={() => setNewBuilding(b)}
+                  className={`px-2.5 py-1 text-xs rounded-lg ${
+                    newBuilding === b
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  }`}
+                >
+                  {BUILDING_LABELS[b] || b}
+                </button>
+              ))}
+              {availableBuildings.length === 0 && (
+                <span className="text-xs text-gray-500">空きなし</span>
+              )}
+            </div>
+          </div>
+          {/* Buttons */}
+          <div className="flex gap-2">
+            <button
+              onClick={handleAddCategory}
+              disabled={!newLabel.trim()}
+              className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-bold rounded-xl text-sm transition-all"
+            >
+              追加する
+            </button>
+            <button
+              onClick={() => setIsAdding(false)}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-xl text-sm"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Content Input & Time */}
-      {selectedCatId && (
+      {selectedCatId && !isAdding && (
         <>
           {/* Content ComboBox */}
           <div>
