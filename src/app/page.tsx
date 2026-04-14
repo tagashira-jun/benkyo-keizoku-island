@@ -328,13 +328,13 @@ function HomeContent() {
                   <div className="bg-gray-800 rounded-lg p-2">
                     <div className="text-gray-300 text-xs">インプット</div>
                     <div className="font-bold text-blue-300">
-                      {Math.round(activeCultivation.totalInputPoints)}分
+                      {activeCultivation.totalInputMinutes ?? Math.round(activeCultivation.totalInputPoints)}分
                     </div>
                   </div>
                   <div className="bg-gray-800 rounded-lg p-2">
                     <div className="text-gray-300 text-xs">アウトプット</div>
                     <div className="font-bold text-orange-300">
-                      {Math.round(activeCultivation.totalOutputPoints)}分
+                      {activeCultivation.totalOutputMinutes ?? Math.round(activeCultivation.totalOutputPoints)}分
                     </div>
                   </div>
                   <div className="bg-gray-800 rounded-lg p-2">

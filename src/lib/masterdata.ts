@@ -157,7 +157,7 @@ export const CERTIFICATIONS: CertificationMaster[] = [
     tips: "IT業界で最初に取る資格として最適。他のすべての資格の土台になります。",
     prerequisiteId: null,
     lineageGroup: "ipa",
-    phaseThresholds: { germinationInput: 540, colonizationInput: 2160, primordiaOutput: 864, fruitingTrigger: 324, maturationTotal: 5400 },
+    phaseThresholds: { germinationInput: 540, colonizationInput: 2160, primordiaOutput: 864, fruitingTrigger: 324, maturationTotal: 5400, awakeningTotal: 6750, transformationTotal: 8640, legendaryTotal: 10800 },
   },
   {
     id: "ap",
@@ -171,7 +171,7 @@ export const CERTIFICATIONS: CertificationMaster[] = [
     tips: "基本情報技術者の合格後に挑戦するのが王道ルート。午後は選択問題なので得意分野を活かせます。",
     prerequisiteId: "fe",
     lineageGroup: "ipa",
-    phaseThresholds: { germinationInput: 720, colonizationInput: 2880, primordiaOutput: 1152, fruitingTrigger: 432, maturationTotal: 7200 },
+    phaseThresholds: { germinationInput: 720, colonizationInput: 2880, primordiaOutput: 1152, fruitingTrigger: 432, maturationTotal: 7200, awakeningTotal: 9000, transformationTotal: 11520, legendaryTotal: 14400 },
   },
   // ─── AWS系統（ヒラタケ → ヤマブシタケ系統樹） ───
   {
@@ -186,7 +186,7 @@ export const CERTIFICATIONS: CertificationMaster[] = [
     tips: "AWS資格の入口。基本情報やLPICの知識があると学習がスムーズです。",
     prerequisiteId: null,
     lineageGroup: "aws",
-    phaseThresholds: { germinationInput: 270, colonizationInput: 1080, primordiaOutput: 432, fruitingTrigger: 162, maturationTotal: 2700 },
+    phaseThresholds: { germinationInput: 270, colonizationInput: 1080, primordiaOutput: 432, fruitingTrigger: 162, maturationTotal: 2700, awakeningTotal: 3375, transformationTotal: 4320, legendaryTotal: 5400 },
   },
   {
     id: "aws_saa",
@@ -200,7 +200,7 @@ export const CERTIFICATIONS: CertificationMaster[] = [
     tips: "CLFの合格後に挑戦を。CCNAやLPICの知識があるとNW・OSの設問が楽になります。",
     prerequisiteId: "aws_clf",
     lineageGroup: "aws",
-    phaseThresholds: { germinationInput: 540, colonizationInput: 2160, primordiaOutput: 864, fruitingTrigger: 324, maturationTotal: 5400 },
+    phaseThresholds: { germinationInput: 540, colonizationInput: 2160, primordiaOutput: 864, fruitingTrigger: 324, maturationTotal: 5400, awakeningTotal: 6750, transformationTotal: 8640, legendaryTotal: 10800 },
   },
   // ─── Linux系統（独立） ───
   {
@@ -215,7 +215,7 @@ export const CERTIFICATIONS: CertificationMaster[] = [
     tips: "サーバーやインフラに関わるなら必須級。基本情報の後に取ると理解が深まります。",
     prerequisiteId: null,
     lineageGroup: "linux",
-    phaseThresholds: { germinationInput: 360, colonizationInput: 1440, primordiaOutput: 576, fruitingTrigger: 216, maturationTotal: 3600 },
+    phaseThresholds: { germinationInput: 360, colonizationInput: 1440, primordiaOutput: 576, fruitingTrigger: 216, maturationTotal: 3600, awakeningTotal: 4500, transformationTotal: 5760, legendaryTotal: 7200 },
   },
   // ─── ネットワーク系統（独立） ───
   {
@@ -230,7 +230,7 @@ export const CERTIFICATIONS: CertificationMaster[] = [
     tips: "ネットワーク専門の道へ進むなら。基本情報のNW知識が前提になります。",
     prerequisiteId: null,
     lineageGroup: "network",
-    phaseThresholds: { germinationInput: 540, colonizationInput: 2160, primordiaOutput: 864, fruitingTrigger: 324, maturationTotal: 5400 },
+    phaseThresholds: { germinationInput: 540, colonizationInput: 2160, primordiaOutput: 864, fruitingTrigger: 324, maturationTotal: 5400, awakeningTotal: 6750, transformationTotal: 8640, legendaryTotal: 10800 },
   },
   // ─── データベース系統（独立） ───
   {
@@ -245,7 +245,7 @@ export const CERTIFICATIONS: CertificationMaster[] = [
     tips: "バックエンド開発やデータ分析に関わるなら。SQLの基礎知識があると良いです。",
     prerequisiteId: null,
     lineageGroup: "db",
-    phaseThresholds: { germinationInput: 360, colonizationInput: 1440, primordiaOutput: 576, fruitingTrigger: 216, maturationTotal: 3600 },
+    phaseThresholds: { germinationInput: 360, colonizationInput: 1440, primordiaOutput: 576, fruitingTrigger: 216, maturationTotal: 3600, awakeningTotal: 4500, transformationTotal: 5760, legendaryTotal: 7200 },
   },
   // ─── プログラミング系統（独立） ───
   {
@@ -260,7 +260,7 @@ export const CERTIFICATIONS: CertificationMaster[] = [
     tips: "プログラミング初心者でも取りやすい。G検定やデータ分析への足がかりにも。",
     prerequisiteId: null,
     lineageGroup: "python",
-    phaseThresholds: { germinationInput: 270, colonizationInput: 1080, primordiaOutput: 432, fruitingTrigger: 162, maturationTotal: 2700 },
+    phaseThresholds: { germinationInput: 270, colonizationInput: 1080, primordiaOutput: 432, fruitingTrigger: 162, maturationTotal: 2700, awakeningTotal: 3375, transformationTotal: 4320, legendaryTotal: 5400 },
   },
   {
     id: "java_silver",
@@ -274,7 +274,7 @@ export const CERTIFICATIONS: CertificationMaster[] = [
     tips: "エンタープライズ系の開発をするなら。オブジェクト指向の理解が深まります。",
     prerequisiteId: null,
     lineageGroup: "java",
-    phaseThresholds: { germinationInput: 360, colonizationInput: 1440, primordiaOutput: 576, fruitingTrigger: 216, maturationTotal: 3600 },
+    phaseThresholds: { germinationInput: 360, colonizationInput: 1440, primordiaOutput: 576, fruitingTrigger: 216, maturationTotal: 3600, awakeningTotal: 4500, transformationTotal: 5760, legendaryTotal: 7200 },
   },
   // ─── AI系統（Python → G検定の流れ推奨） ───
   {
@@ -289,7 +289,7 @@ export const CERTIFICATIONS: CertificationMaster[] = [
     tips: "Python基礎試験の後に挑戦すると効率的。AI・機械学習の全体像が掴めます。",
     prerequisiteId: null,
     lineageGroup: "ai",
-    phaseThresholds: { germinationInput: 360, colonizationInput: 1440, primordiaOutput: 576, fruitingTrigger: 216, maturationTotal: 3600 },
+    phaseThresholds: { germinationInput: 360, colonizationInput: 1440, primordiaOutput: 576, fruitingTrigger: 216, maturationTotal: 3600, awakeningTotal: 4500, transformationTotal: 5760, legendaryTotal: 7200 },
   },
   {
     id: "genai_passport",
@@ -303,7 +303,7 @@ export const CERTIFICATIONS: CertificationMaster[] = [
     tips: "AI初学者におすすめ。生成AIの仕組み・活用法・リスクを網羅的に学べます。G検定の前段としても最適。",
     prerequisiteId: null,
     lineageGroup: "ai",
-    phaseThresholds: { germinationInput: 180, colonizationInput: 720, primordiaOutput: 288, fruitingTrigger: 108, maturationTotal: 1800 },
+    phaseThresholds: { germinationInput: 180, colonizationInput: 720, primordiaOutput: 288, fruitingTrigger: 108, maturationTotal: 1800, awakeningTotal: 2250, transformationTotal: 2880, legendaryTotal: 3600 },
   },
   // ─── 個人開発（独立種） ───
   {
@@ -318,7 +318,7 @@ export const CERTIFICATIONS: CertificationMaster[] = [
     tips: "どの資格とも独立して始められます。取得した資格の知識を配合で活かしましょう。",
     prerequisiteId: null,
     lineageGroup: "personal",
-    phaseThresholds: { germinationInput: 540, colonizationInput: 2160, primordiaOutput: 864, fruitingTrigger: 324, maturationTotal: 5400 },
+    phaseThresholds: { germinationInput: 540, colonizationInput: 2160, primordiaOutput: 864, fruitingTrigger: 324, maturationTotal: 5400, awakeningTotal: 6750, transformationTotal: 8640, legendaryTotal: 10800 },
   },
 ];
 

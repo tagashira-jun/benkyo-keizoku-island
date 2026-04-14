@@ -120,12 +120,9 @@ function RecordContent() {
     }
   }
 
-  /** 時間を表示用にフォーマット */
+  /** 時間を表示用にフォーマット（分のみ統一） */
   function formatMinutes(m: number): string {
-    if (m < 60) return `${m}分`;
-    const h = Math.floor(m / 60);
-    const rest = m % 60;
-    return rest > 0 ? `${h}時間${rest}分` : `${h}時間`;
+    return `${m}分`;
   }
 
   if (!firebaseUser) {

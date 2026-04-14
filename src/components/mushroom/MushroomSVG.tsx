@@ -178,7 +178,10 @@ function stageLabel(phase: GrowthPhase): string {
          phase === 3 ? "成長期" :
          phase === 4 ? "青年期" :
          phase === 5 ? "成人期" :
-         "成熟期";
+         phase === 6 ? "成熟期" :
+         phase === 7 ? "覚醒" :
+         phase === 8 ? "変容" :
+         "化け物";
 }
 
 function bodyTypeLabel(bt: "fat" | "normal" | "thin"): string {
@@ -350,7 +353,13 @@ function Character({
     phase === 3 ? 0.72 :
     phase === 4 ? 0.85 :
     phase === 5 ? 1.0 :
-    1.1;
+    phase === 6 ? 1.1 :
+    phase === 7 ? 1.22 :   // 覚醒：一回り大きく
+    phase === 8 ? 1.38 :   // 変容：さらに大きく
+    1.55;                  // Phase 9 化け物MAX
+
+  // 化け物フェーズ判定
+  const monsterLevel = phase >= 9 ? 3 : phase >= 8 ? 2 : phase >= 7 ? 1 : 0;
 
   const size = 80 * scale * charScale;
 
@@ -375,7 +384,9 @@ function Character({
   const skinColor = `hsl(${hue}, ${Math.max(sat - 40, 10)}%, ${Math.min(bri + 35, 92)}%)`;
   const skinDark = `hsl(${hue}, ${Math.max(sat - 35, 10)}%, ${Math.min(bri + 20, 80)}%)`;
 
-  const capR = size * 0.7 * headRatio;
+  // 化け物フェーズは傘がさらに巨大化
+  const capScaleMod = monsterLevel === 3 ? 1.45 : monsterLevel === 2 ? 1.25 : monsterLevel === 1 ? 1.08 : 1.0;
+  const capR = size * 0.7 * headRatio * capScaleMod;
   const capH = capR * Math.max(m.capRoundness, 0.45) * 0.7;
 
   const bodyW = size * 0.5 * bodyWidthMod;
@@ -451,8 +462,8 @@ function Character({
         <g>
           <circle cx={cx - bodyW * 0.28} cy={cy + bodyH * 0.02} r={bodyW * 0.1} fill="#f4a8a8" opacity={0.6} />
           <circle cx={cx + bodyW * 0.28} cy={cy + bodyH * 0.02} r={bodyW * 0.1} fill="#f4a8a8" opacity={0.6} />
-          <Eye cx={cx - bodyW * 0.2} cy={cy - bodyH * 0.08} r={bodyW * 0.08} state={eyeState} />
-          <Eye cx={cx + bodyW * 0.2} cy={cy - bodyH * 0.08} r={bodyW * 0.08} state={eyeState} />
+          <Eye cx={cx - bodyW * 0.2} cy={cy - bodyH * 0.08} r={bodyW * 0.08} state={eyeState} monsterLevel={monsterLevel} />
+          <Eye cx={cx + bodyW * 0.2} cy={cy - bodyH * 0.08} r={bodyW * 0.08} state={eyeState} monsterLevel={monsterLevel} />
           <Mouth cx={cx} cy={cy + bodyH * 0.08} w={bodyW * 0.15} tirednessLevel={tirednessLevel} phase={phase} />
         </g>
 
@@ -479,6 +490,17 @@ function Character({
           />
         )}
 
+        {/* 化け物フェーズのエフェクト */}
+        {monsterLevel >= 2 && (
+          <MonsterHorns cx={cx} cy={cy - bodyH * 0.35 - capH * 0.8} capR={capR} level={monsterLevel} />
+        )}
+        {monsterLevel >= 1 && (
+          <MonsterAura cx={cx} cy={cy} bodyH={bodyH} level={monsterLevel} />
+        )}
+        {phase === 9 && (
+          <MonsterLightning cx={cx} cy={cy} capR={capR} bodyH={bodyH} />
+        )}
+
         {/* ドメインバッジ（既存知識がある場合、傘の上に浮かぶ） */}
         {experienceDomains.length > 0 && phase >= 3 && (
           <DomainBadges
@@ -493,6 +515,14 @@ function Character({
           <g>
             <Sparkle cx={cx - capR * 1.1} cy={cy - bodyH * 0.5} />
             <Sparkle cx={cx + capR * 1.05} cy={cy - bodyH * 0.55} />
+          </g>
+        )}
+
+        {/* Phase 7-8 の禍々しいオーラスパーク */}
+        {(phase === 7 || phase === 8) && tirednessLevel !== "exhausted" && (
+          <g>
+            <Sparkle cx={cx - capR * 1.2} cy={cy - bodyH * 0.6} color="#f97316" />
+            <Sparkle cx={cx + capR * 1.15} cy={cy - bodyH * 0.65} color="#ef4444" />
           </g>
         )}
 
@@ -776,30 +806,58 @@ function CategoryAccessory({ category, cx, cy, size }: { category: string; cx: n
 }
 
 // ============================================
-// 目（瞬き付き）
+// 目（瞬き付き + 化け物フェーズ目光り）
 // ============================================
-function Eye({ cx, cy, r, state }: { cx: number; cy: number; r: number; state: "open" | "half" | "closed" }) {
+function Eye({ cx, cy, r, state, monsterLevel = 0 }: {
+  cx: number; cy: number; r: number;
+  state: "open" | "half" | "closed";
+  monsterLevel?: number;
+}) {
+  // 化け物フェーズ：目の周りに光るリング
+  const eyeGlow = monsterLevel >= 1 ? (
+    <circle cx={cx} cy={cy} r={r * (monsterLevel >= 3 ? 1.7 : monsterLevel >= 2 ? 1.45 : 1.25)}
+      fill="none"
+      stroke={monsterLevel >= 3 ? "#dc2626" : monsterLevel >= 2 ? "#f97316" : "#fbbf24"}
+      strokeWidth={monsterLevel >= 3 ? 2.2 : 1.5}
+      opacity={0.85}
+    >
+      <animate attributeName="opacity" values="0.85;0.3;0.85" dur={`${1.2 + monsterLevel * 0.2}s`} repeatCount="indefinite" />
+      <animate attributeName="r"
+        values={`${r * 1.25};${r * (monsterLevel >= 3 ? 2.0 : 1.55)};${r * 1.25}`}
+        dur={`${1.2 + monsterLevel * 0.2}s`}
+        repeatCount="indefinite"
+      />
+    </circle>
+  ) : null;
+
   if (state === "closed") {
     return (
-      <path
-        d={`M ${cx - r} ${cy} Q ${cx} ${cy + r * 0.4} ${cx + r} ${cy}`}
-        stroke="#1a1a1a"
-        strokeWidth={1.5}
-        fill="none"
-        strokeLinecap="round"
-      />
+      <g>
+        {eyeGlow}
+        <path
+          d={`M ${cx - r} ${cy} Q ${cx} ${cy + r * 0.4} ${cx + r} ${cy}`}
+          stroke="#1a1a1a"
+          strokeWidth={1.5}
+          fill="none"
+          strokeLinecap="round"
+        />
+      </g>
     );
   }
   if (state === "half") {
     return (
       <g>
+        {eyeGlow}
         <ellipse cx={cx} cy={cy} rx={r * 0.8} ry={r * 0.4} fill="white" />
-        <circle cx={cx} cy={cy} r={r * 0.35} fill="#1a1a1a" />
+        <circle cx={cx} cy={cy} r={r * 0.35} fill={monsterLevel >= 2 ? "#dc2626" : "#1a1a1a"} />
       </g>
     );
   }
+  // 化け物フェーズ：瞳が赤く光る
+  const pupilColor = monsterLevel >= 3 ? "#dc2626" : monsterLevel >= 2 ? "#f97316" : monsterLevel >= 1 ? "#f59e0b" : "#1a1a1a";
   return (
     <g>
+      {eyeGlow}
       <ellipse cx={cx} cy={cy} rx={r * 0.9} ry={r} fill="white">
         <animate
           attributeName="ry"
@@ -809,7 +867,7 @@ function Eye({ cx, cy, r, state }: { cx: number; cy: number; r: number; state: "
           repeatCount="indefinite"
         />
       </ellipse>
-      <circle cx={cx} cy={cy + r * 0.1} r={r * 0.55} fill="#1a1a1a">
+      <circle cx={cx} cy={cy + r * 0.1} r={r * 0.55} fill={pupilColor}>
         <animate
           attributeName="r"
           values={`${r * 0.55};0;${r * 0.55};${r * 0.55};${r * 0.55}`}
@@ -952,14 +1010,14 @@ function DomainBadges({ cx, cy, domains }: { cx: number; cy: number; domains: st
 }
 
 // ============================================
-// きらめき
+// きらめき（色指定対応）
 // ============================================
-function Sparkle({ cx, cy }: { cx: number; cy: number }) {
+function Sparkle({ cx, cy, color = "#fde68a" }: { cx: number; cy: number; color?: string }) {
   return (
     <g>
       <path
         d={`M ${cx} ${cy - 4} L ${cx + 1.5} ${cy} L ${cx + 4} ${cy + 1.5} L ${cx + 1.5} ${cy + 3} L ${cx} ${cy + 7} L ${cx - 1.5} ${cy + 3} L ${cx - 4} ${cy + 1.5} L ${cx - 1.5} ${cy} Z`}
-        fill="#fde68a"
+        fill={color}
         opacity={0.9}
       >
         <animate attributeName="opacity" values="0.9;0.3;0.9" dur="2s" repeatCount="indefinite" />
@@ -971,6 +1029,124 @@ function Sparkle({ cx, cy }: { cx: number; cy: number }) {
           repeatCount="indefinite"
         />
       </path>
+    </g>
+  );
+}
+
+// ============================================
+// 化け物フェーズ — 角（Phase 8-9）
+// ============================================
+function MonsterHorns({ cx, cy, capR, level }: { cx: number; cy: number; capR: number; level: number }) {
+  const hornH = capR * (level >= 3 ? 0.55 : 0.35);
+  const hornW = capR * (level >= 3 ? 0.18 : 0.12);
+  const spread = capR * (level >= 3 ? 0.45 : 0.3);
+  const hornColor = level >= 3 ? "#7f1d1d" : "#9a3412";
+  const tipColor = level >= 3 ? "#dc2626" : "#f97316";
+  return (
+    <g>
+      {/* 左角 */}
+      <path
+        d={`M ${cx - spread} ${cy} L ${cx - spread - hornW} ${cy - hornH} L ${cx - spread + hornW * 0.3} ${cy - hornH * 0.8} Z`}
+        fill={hornColor}
+        stroke={tipColor}
+        strokeWidth={0.8}
+      />
+      {/* 右角 */}
+      <path
+        d={`M ${cx + spread} ${cy} L ${cx + spread + hornW} ${cy - hornH} L ${cx + spread - hornW * 0.3} ${cy - hornH * 0.8} Z`}
+        fill={hornColor}
+        stroke={tipColor}
+        strokeWidth={0.8}
+      />
+      {/* Phase 9: 小さい追加角 */}
+      {level >= 3 && (
+        <>
+          <path
+            d={`M ${cx - spread * 0.4} ${cy + hornH * 0.1} L ${cx - spread * 0.4 - hornW * 0.5} ${cy - hornH * 0.45} L ${cx - spread * 0.4 + hornW * 0.15} ${cy - hornH * 0.35} Z`}
+            fill={hornColor} stroke={tipColor} strokeWidth={0.6} opacity={0.85}
+          />
+          <path
+            d={`M ${cx + spread * 0.4} ${cy + hornH * 0.1} L ${cx + spread * 0.4 + hornW * 0.5} ${cy - hornH * 0.45} L ${cx + spread * 0.4 - hornW * 0.15} ${cy - hornH * 0.35} Z`}
+            fill={hornColor} stroke={tipColor} strokeWidth={0.6} opacity={0.85}
+          />
+        </>
+      )}
+    </g>
+  );
+}
+
+// ============================================
+// 化け物フェーズ — 禍々しいオーラ靄（Phase 7-9）
+// ============================================
+function MonsterAura({ cx, cy, bodyH, level }: { cx: number; cy: number; bodyH: number; level: number }) {
+  const auraColor = level >= 3 ? "#7f1d1d" : level >= 2 ? "#9a3412" : "#92400e";
+  const opacity = level >= 3 ? 0.55 : level >= 2 ? 0.4 : 0.28;
+  const r = bodyH * (level >= 3 ? 0.65 : level >= 2 ? 0.5 : 0.38);
+  return (
+    <g>
+      {/* 足元の靄 */}
+      <ellipse cx={cx} cy={cy + bodyH * 0.5} rx={r * 1.2} ry={r * 0.25} fill={auraColor} opacity={opacity * 0.7}>
+        <animate attributeName="rx" values={`${r * 1.2};${r * 1.5};${r * 1.2}`} dur="2.5s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values={`${opacity * 0.7};${opacity * 0.35};${opacity * 0.7}`} dur="2.5s" repeatCount="indefinite" />
+      </ellipse>
+      {/* 全体のオーラ輪郭 */}
+      {[0, 120, 240].map((deg, i) => {
+        const rad = (deg * Math.PI) / 180;
+        const px = cx + Math.cos(rad) * r * 0.8;
+        const py = cy + Math.sin(rad) * r * 0.5;
+        return (
+          <circle key={i} cx={px} cy={py} r={level >= 3 ? 5 : 3.5} fill={auraColor} opacity={opacity}>
+            <animate
+              attributeName="opacity"
+              values={`${opacity};${opacity * 0.2};${opacity}`}
+              dur={`${1.8 + i * 0.3}s`}
+              repeatCount="indefinite"
+            />
+            <animateTransform
+              attributeName="transform"
+              type="rotate"
+              values={`0 ${cx} ${cy};${level >= 3 ? -360 : 360} ${cx} ${cy}`}
+              dur={`${5 + i}s`}
+              repeatCount="indefinite"
+            />
+          </circle>
+        );
+      })}
+    </g>
+  );
+}
+
+// ============================================
+// 化け物フェーズ — 稲妻エフェクト（Phase 9）
+// ============================================
+function MonsterLightning({ cx, cy, capR, bodyH }: { cx: number; cy: number; capR: number; bodyH: number }) {
+  const bolts = [
+    { x1: cx - capR * 0.9, y1: cy - bodyH * 0.7, x2: cx - capR * 0.6, y2: cy - bodyH * 0.4, delay: "0s" },
+    { x1: cx + capR * 0.85, y1: cy - bodyH * 0.75, x2: cx + capR * 0.55, y2: cy - bodyH * 0.45, delay: "0.7s" },
+    { x1: cx, y1: cy - bodyH * 1.0, x2: cx + capR * 0.2, y2: cy - bodyH * 0.65, delay: "1.3s" },
+  ];
+  return (
+    <g>
+      {bolts.map((b, i) => (
+        <path
+          key={i}
+          d={`M ${b.x1} ${b.y1} L ${(b.x1 + b.x2) / 2 + 4} ${(b.y1 + b.y2) / 2} L ${b.x2} ${b.y2}`}
+          stroke="#fbbf24"
+          strokeWidth={1.8}
+          fill="none"
+          strokeLinecap="round"
+          opacity={0.9}
+        >
+          <animate
+            attributeName="opacity"
+            values="0;0.9;0.9;0"
+            keyTimes="0;0.05;0.15;0.3"
+            dur="1.5s"
+            begin={b.delay}
+            repeatCount="indefinite"
+          />
+        </path>
+      ))}
     </g>
   );
 }

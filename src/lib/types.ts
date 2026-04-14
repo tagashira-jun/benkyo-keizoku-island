@@ -116,20 +116,29 @@ export interface PhaseThresholds {
   fruitingTrigger: number;
   /** Phase5→6: 成熟に必要な総ポイント */
   maturationTotal: number;
+  /** Phase6→7: 覚醒（化け物化開始）に必要な総ポイント */
+  awakeningTotal: number;
+  /** Phase7→8: 変容に必要な総ポイント */
+  transformationTotal: number;
+  /** Phase8→9: 化け物（最終形態）に必要な総ポイント */
+  legendaryTotal: number;
 }
 
 // ============================================
 // 栽培状態
 // ============================================
 
-/** 成長フェーズ */
+/** 成長フェーズ（Phase 7-9 は化け物フェーズ） */
 export type GrowthPhase =
   | 1  // 胞子発芽（Spore Germination）
   | 2  // 菌糸伸長（Mycelial Growth）
   | 3  // 菌糸蔓延（Full Colonization）
   | 4  // 原基形成（Primordia Formation）
   | 5  // 子実体成長（Fruiting Body Development）
-  | 6; // 成熟・収穫（Maturation & Harvest）
+  | 6  // 成熟・収穫（Maturation & Harvest）
+  | 7  // 覚醒（Awakening）— 目が光る
+  | 8  // 変容（Transformation）— 傘巨大化・角
+  | 9; // 化け物（Legendary Monster）— 最終形態
 
 export const PHASE_NAMES: Record<GrowthPhase, { ja: string; en: string }> = {
   1: { ja: "胞子発芽", en: "Spore Germination" },
@@ -138,6 +147,9 @@ export const PHASE_NAMES: Record<GrowthPhase, { ja: string; en: string }> = {
   4: { ja: "原基形成", en: "Primordia Formation" },
   5: { ja: "子実体成長", en: "Fruiting Body" },
   6: { ja: "成熟", en: "Maturation" },
+  7: { ja: "覚醒", en: "Awakening" },
+  8: { ja: "変容", en: "Transformation" },
+  9: { ja: "化け物", en: "Legendary" },
 };
 
 /** 環境パラメータ（学習記録から算出） */
@@ -176,9 +188,13 @@ export interface Cultivation {
   phase: GrowthPhase;
   startDate: string;        // YYYY-MM-DD
 
-  // ポイント累計
+  // ポイント累計（体調・充実感補正後）
   totalInputPoints: number;
   totalOutputPoints: number;
+
+  // 実際の学習分数累計（補正なし・表示用）
+  totalInputMinutes: number;
+  totalOutputMinutes: number;
 
   // 環境パラメータ（学習記録から毎回再計算）
   environmentParams: EnvironmentParams;

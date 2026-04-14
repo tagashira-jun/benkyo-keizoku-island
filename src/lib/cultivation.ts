@@ -207,6 +207,13 @@ export function determineGrowthPhase(
   const adjustedTotal = adjustedInput + adjustedOutput;
 
   if (cultivation.isCompleted) return 6;
+
+  // ── 化け物フェーズ（Phase 7-9）──
+  if (t.legendaryTotal     && adjustedTotal >= t.legendaryTotal)     return 9;
+  if (t.transformationTotal && adjustedTotal >= t.transformationTotal) return 8;
+  if (t.awakeningTotal     && adjustedTotal >= t.awakeningTotal)     return 7;
+
+  // ── 通常フェーズ（Phase 1-6）──
   if (adjustedTotal >= t.maturationTotal && adjustedOutput >= t.fruitingTrigger) return 6;
   if (adjustedOutput >= t.fruitingTrigger) return 5;
   if (adjustedOutput >= t.primordiaOutput) return 4;
@@ -363,6 +370,8 @@ export function createInitialCultivation(
     startDate: today,
     totalInputPoints: 0,
     totalOutputPoints: 0,
+    totalInputMinutes: 0,
+    totalOutputMinutes: 0,
     environmentParams: {
       carbonSource: 0, nitrogenSource: 0, minerals: 0, moisture: 0,
       temperature: 0, humidity: 0, co2: 0, light: 0,
@@ -400,6 +409,15 @@ export function updateCultivationWithLog(
   // 1日あたり 240分（4時間）までは満額、超過分は50%に減衰
   // 詰め込み学習を抑制し、継続的な学習を促す
   const DAILY_CAP = 240;
+
+  // 実分数の集計（補正なし・表示用）
+  let totalInputMinutes = 0;
+  let totalOutputMinutes = 0;
+  for (const log of allLogs) {
+    if (log.type === "input") totalInputMinutes += log.minutes;
+    else totalOutputMinutes += log.minutes;
+  }
+
   const pointsByDay = new Map<string, { input: number; output: number }>();
   for (const log of allLogs) {
     const pts = calculatePoints(log.minutes, log.condition ?? 3, log.fulfillment ?? 3);
@@ -481,6 +499,8 @@ export function updateCultivationWithLog(
   return {
     totalInputPoints: totalInput,
     totalOutputPoints: totalOutput,
+    totalInputMinutes,
+    totalOutputMinutes,
     environmentParams,
     phase,
     morphology,
