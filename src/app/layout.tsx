@@ -1,12 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
+import ClientProvider from "./ClientProvider";
 
 const GTM_ID = "GTM-NXGQXFN6";
 
 export const metadata: Metadata = {
-  title: "知識の島 - 学習トラッカー",
-  description: "意志力に頼らず、仕組みで学習を継続するゲーミフィケーション学習トラッカー",
+  title: "Kinoko Lab - キノコ栽培ゲーミフィケーション学習アプリ",
+  description:
+    "ITの学習をキノコ栽培で可視化。インプットとアウトプットのバランスでキノコが育つ。",
 };
 
 export const viewport: Viewport = {
@@ -14,7 +16,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#0a0a0a",
+  themeColor: "#030712",
 };
 
 export default function RootLayout({
@@ -46,7 +48,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             style={{ display: "none", visibility: "hidden" }}
           />
         </noscript>
-        {children}
+        <ClientProvider>{children}</ClientProvider>
       </body>
     </html>
   );
