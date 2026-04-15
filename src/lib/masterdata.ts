@@ -480,8 +480,8 @@ export const ACHIEVEMENTS: Achievement[] = [
   // ─────────────────────────────
   {
     id: "streak_3",
-    name: "三日坊主回避",
-    description: "3日連続で学習記録を残す",
+    name: "発芽の鼓動",
+    description: "3日続けて学習を記録。菌糸がゆっくり基質に広がり始めました",
     category: "study",
     condition: "3日連続で記録",
     rewardItemId: "sticky_note",
@@ -491,7 +491,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: "streak_7",
     name: "継続の菌糸",
-    description: "7日間連続で学習記録を残す",
+    description: "7日続けて学習を記録。菌糸ネットワークが順調に育っています（休眠チケット +1）",
     category: "study",
     condition: "7日連続で記録",
     rewardItemId: "flame_badge",
@@ -500,8 +500,8 @@ export const ACHIEVEMENTS: Achievement[] = [
   },
   {
     id: "streak_30",
-    name: "培養マスター",
-    description: "30日間連続で学習記録を残す",
+    name: "培養のリズム",
+    description: "30日の学習リズムが身につきました。休む日があっても大丈夫（休眠チケット合計 +3）",
     category: "study",
     condition: "30日連続で記録",
     rewardItemId: "clean_bench",
@@ -510,8 +510,8 @@ export const ACHIEVEMENTS: Achievement[] = [
   },
   {
     id: "streak_100",
-    name: "不屈の菌糸体",
-    description: "100日連続で学習記録を残す",
+    name: "深く根付いた菌糸体",
+    description: "100日の学習を積み上げました。もう三日休んでも揺らがない強い根です（休眠チケット合計 +6）",
     category: "study",
     condition: "100日連続で記録",
     rewardItemId: "trophy_gold",
@@ -565,7 +565,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: "deep_dive",
     name: "没頭の一日",
-    description: "1日に4時間以上学習する",
+    description: "1日にたっぷり学習した日の記念。この後は休息も大切に——睡眠と休憩が記憶を定着させます",
     category: "study",
     condition: "同じ日に累計240分以上記録",
     rewardItemId: "focus_candle",

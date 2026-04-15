@@ -11,7 +11,7 @@ import MushroomSVG from "@/components/mushroom/MushroomSVG";
 import Link from "next/link";
 
 function HomeContent() {
-  const { firebaseUser, loading } = useAuth();
+  const { firebaseUser, userProfile, loading } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -49,6 +49,16 @@ function HomeContent() {
   const unlockedAchievementIds = (searchParams.get("achievements") || "")
     .split(",")
     .filter(Boolean);
+  /** 今回の記録で菌糸休眠チケットを消費して連続記録を守った日付（カンマ区切り） */
+  const frozenDatesConsumed = (searchParams.get("frozen") || "")
+    .split(",")
+    .filter(Boolean);
+  /** 今回の記録で新たに付与された菌糸休眠チケット枚数 */
+  const freezeTokensAwarded = parseInt(searchParams.get("freezeAwarded") || "0", 10);
+
+  // ユーザー設定
+  const quietMode = userProfile?.preferences?.quietMode ?? false;
+  const freezeTokens = userProfile?.freezeTokens ?? 0;
 
   useEffect(() => {
     if (!firebaseUser) return;
@@ -182,6 +192,37 @@ function HomeContent() {
             </div>
           </div>
 
+          {/* 菌糸休眠チケット消費の通知（情報的フィードバック） */}
+          {frozenDatesConsumed.length > 0 && (
+            <div className="bg-sky-900/60 border border-sky-500 rounded-lg px-4 py-3 text-sky-100 text-sm flex items-start gap-2">
+              <span className="text-lg leading-none mt-0.5">🧊</span>
+              <div>
+                <div className="font-medium">
+                  菌糸休眠チケットを{frozenDatesConsumed.length}枚使いました
+                </div>
+                <div className="text-xs text-sky-200 leading-relaxed">
+                  {frozenDatesConsumed.join("、")} の菌糸は休眠状態でした。
+                  あなたの連続記録は途切れていません。休息もキノコの成長の一部です。
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 菌糸休眠チケット新規配布の通知 */}
+          {freezeTokensAwarded > 0 && (
+            <div className="bg-cyan-900/60 border border-cyan-500 rounded-lg px-4 py-3 text-cyan-100 text-sm flex items-start gap-2">
+              <span className="text-lg leading-none mt-0.5">🎁</span>
+              <div>
+                <div className="font-medium">
+                  菌糸休眠チケットを{freezeTokensAwarded}枚手に入れました
+                </div>
+                <div className="text-xs text-cyan-200 leading-relaxed">
+                  連続記録の実績解除の証です。1日休んでしまった時にそっと消費されます。
+                </div>
+              </div>
+            </div>
+          )}
+
           {phaseChanged && phaseAfter >= 1 && phaseAfter <= 6 && (
             <div className="bg-amber-900/60 border border-amber-500 rounded-lg px-4 py-3 text-amber-100 text-sm flex items-center gap-2 animate-pulse">
               <span className="text-lg">✨</span>
@@ -201,6 +242,7 @@ function HomeContent() {
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">🏆</span>
                 <span className="font-medium">実績解除！</span>
+                <span className="text-[10px] text-purple-300 ml-auto">自動受け取り済</span>
               </div>
               <div className="space-y-1">
                 {unlockedAchievementIds.map(id => {
@@ -210,10 +252,17 @@ function HomeContent() {
                     <div key={id} className="text-xs">
                       ・<span className="text-purple-100 font-medium">{ach.name}</span>
                       <span className="text-purple-300 ml-2">（{ach.description}）</span>
+                      <span className="text-purple-400 ml-1">🎁 {ach.rewardItemName}</span>
                     </div>
                   );
                 })}
               </div>
+              <Link
+                href="/room"
+                className="inline-flex items-center gap-1 text-[11px] text-purple-200 hover:text-white mt-2 underline decoration-purple-400/40"
+              >
+                マイルームで実績・報酬を見る →
+              </Link>
             </div>
           )}
         </div>
@@ -324,7 +373,7 @@ function HomeContent() {
                 </div>
 
                 {/* ステータス */}
-                <div className="grid grid-cols-3 gap-3 text-center text-sm">
+                <div className={`grid ${quietMode ? "grid-cols-2" : "grid-cols-3"} gap-3 text-center text-sm`}>
                   <div className="bg-gray-800 rounded-lg p-2">
                     <div className="text-gray-300 text-xs">インプット</div>
                     <div className="font-bold text-blue-300">
@@ -337,12 +386,19 @@ function HomeContent() {
                       {activeCultivation.totalOutputMinutes ?? Math.round(activeCultivation.totalOutputPoints)}分
                     </div>
                   </div>
-                  <div className="bg-gray-800 rounded-lg p-2">
-                    <div className="text-gray-300 text-xs">連続</div>
-                    <div className="font-bold text-emerald-300">
-                      {activeCultivation.streakDays}日
+                  {!quietMode && (
+                    <div className="bg-gray-800 rounded-lg p-2 flex flex-col items-center justify-center">
+                      <div className="text-gray-300 text-xs">連続</div>
+                      <div className="font-bold text-emerald-300 flex items-center gap-1">
+                        <span>{activeCultivation.streakDays}日</span>
+                        {freezeTokens > 0 && (
+                          <span className="text-[10px] text-sky-300" title="菌糸休眠チケット残数">
+                            🧊{freezeTokens}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* 体調・充実感インジケータ */}
@@ -390,6 +446,18 @@ function HomeContent() {
                     <span className="text-gray-400 ml-2">
                       （共有{activeCultivation.sharedDomainCount}ドメイン）
                     </span>
+                  </div>
+                )}
+
+                {/* 目標宣言（Epic Meaning） */}
+                {activeCultivation.goalStatement && activeCultivation.goalStatement.trim() && (
+                  <div className="mt-4 bg-emerald-950/40 border border-emerald-900/60 rounded-lg p-3">
+                    <div className="text-[11px] text-emerald-400 font-medium mb-1">
+                      📜 この旅を始めた理由
+                    </div>
+                    <div className="text-sm text-emerald-100 whitespace-pre-wrap leading-relaxed">
+                      {activeCultivation.goalStatement}
+                    </div>
                   </div>
                 )}
               </div>
@@ -501,6 +569,16 @@ function TutorialModal({
       body: "ITエンジニアの資格勉強を「キノコ栽培」で可視化するアプリです。毎日の学習がそのままキノコの成長になります。",
     },
     {
+      emoji: "🌱",
+      title: "なぜ「キノコ栽培」なのか",
+      body: "学習は一夜にして実らない——菌糸のように静かに、目に見えないところで積み重なり、ある日ふわりと子実体（成果）を地表に押し上げます。あなたの一日の学習は無駄な努力ではなく、未来の知識体を形づくる菌糸です。数字やストリークは「続けた事実の証人」であり、追い立てるムチではありません。",
+    },
+    {
+      emoji: "🧭",
+      title: "あなたの目的は、あなたのもの",
+      body: "資格取得はゴールではなく、その先にある「なりたい自分」への道具です。転職、独立、自信、家族を支える力——栽培を始めるときに200文字までの『この旅を始めた理由』を書き残せます。迷ったときに、自分のための灯台になります（書かなくてもOK）。",
+    },
+    {
       emoji: "📚",
       title: "① 資格を選んで栽培開始",
       body: "基本情報・AWS・LPIC などから育てたい資格を選ぶと、対応するキノコキャラの栽培が始まります。既に収穫したキノコと「配合」して知識を引き継ぐこともできます。",
@@ -524,6 +602,11 @@ function TutorialModal({
       emoji: "🏆",
       title: "⑤ 実績で部屋を飾る",
       body: "連続記録・収穫数・配合など多数の実績を用意。解除で報酬アイテムが部屋に増えていきます。まずは「学習を1回記録する」から始めてみましょう！",
+    },
+    {
+      emoji: "🧊",
+      title: "休むことは負けじゃない",
+      body: "連続7日・30日・100日で『菌糸休眠チケット』が手に入ります。忙しい日や体調が優れない日に、チケットが1枚自動消費されて連続記録を守ってくれます。マイページの『静かな栽培モード』をONにすれば、連続日数や競争要素を丸ごと隠して自分のペースで育てられます。疲れたら休む——それも菌類の生き方です。",
     },
   ];
   const current = steps[step];

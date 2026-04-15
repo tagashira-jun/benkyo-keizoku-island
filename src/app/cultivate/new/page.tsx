@@ -64,11 +64,12 @@ export default function NewCultivationPage() {
   const { firebaseUser } = useAuth();
   const router = useRouter();
 
-  const [step, setStep] = useState<"select" | "mating" | "confirm">("select");
+  const [step, setStep] = useState<"select" | "mating" | "goal" | "confirm">("select");
   const [selectedCert, setSelectedCert] = useState<CertificationMaster | null>(null);
   const [harvested, setHarvested] = useState<HarvestedMushroom[]>([]);
   const [selectedPartner, setSelectedPartner] = useState<HarvestedMushroom | null>(null);
   const [compatibilities, setCompatibilities] = useState<MatingCompatibility[]>([]);
+  const [goalStatement, setGoalStatement] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const lineageGroups = getCertificationsByLineage();
@@ -95,20 +96,20 @@ export default function NewCultivationPage() {
     if (harvested.length > 0) {
       setStep("mating");
     } else {
-      setStep("confirm");
+      setStep("goal");
     }
   }
 
   function handlePartnerSelect(partner: HarvestedMushroom | null) {
     setSelectedPartner(partner);
-    setStep("confirm");
+    setStep("goal");
   }
 
   async function handleStart() {
     if (!firebaseUser || !selectedCert) return;
     setSubmitting(true);
     try {
-      await startCultivation(firebaseUser.uid, selectedCert.id, selectedPartner);
+      await startCultivation(firebaseUser.uid, selectedCert.id, selectedPartner, goalStatement);
       router.push("/");
     } finally {
       setSubmitting(false);
@@ -124,7 +125,15 @@ export default function NewCultivationPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center gap-3">
-        <button onClick={() => step === "select" ? router.push("/") : setStep("select")} className="text-gray-400 hover:text-white text-sm">
+        <button
+          onClick={() => {
+            if (step === "select") router.push("/");
+            else if (step === "mating") setStep("select");
+            else if (step === "goal") setStep(harvested.length > 0 ? "mating" : "select");
+            else if (step === "confirm") setStep("goal");
+          }}
+          className="text-gray-400 hover:text-white text-sm"
+        >
           &larr; 戻る
         </button>
         <h1 className="text-lg font-bold text-emerald-400">新しい栽培を始める</h1>
@@ -133,14 +142,15 @@ export default function NewCultivationPage() {
       <div className="max-w-lg mx-auto px-4 py-6">
         {/* ステップ表示 */}
         <div className="flex gap-2 mb-6">
-          {["資格選択", "菌株配合", "確認"].map((label, i) => {
-            const stepIndex = i === 0 ? "select" : i === 1 ? "mating" : "confirm";
+          {(["資格選択", "菌株配合", "目標宣言", "確認"] as const).map((label, i) => {
+            const stepIndex = (["select", "mating", "goal", "confirm"] as const)[i];
+            const stepOrder = ["select", "mating", "goal", "confirm"];
             const isActive = step === stepIndex;
-            const isDone = (step === "mating" && i === 0) || (step === "confirm" && i <= 1);
+            const isDone = stepOrder.indexOf(step) > i;
             return (
               <div key={i} className="flex-1 text-center">
                 <div className={`h-1 rounded-full mb-1 ${isActive ? "bg-emerald-500" : isDone ? "bg-emerald-700" : "bg-gray-700"}`} />
-                <span className={`text-xs ${isActive ? "text-emerald-400" : "text-gray-300"}`}>{label}</span>
+                <span className={`text-[11px] ${isActive ? "text-emerald-400" : "text-gray-300"}`}>{label}</span>
               </div>
             );
           })}
@@ -288,7 +298,52 @@ export default function NewCultivationPage() {
           </div>
         )}
 
-        {/* Step 3: 確認（ドメイン表示なし、tips表示） */}
+        {/* Step 3: 目標宣言（Epic Meaning：自分の言葉で挑戦理由を宣言） */}
+        {step === "goal" && selectedCert && (
+          <div>
+            <h2 className="text-sm text-gray-300 mb-1 font-medium">
+              なぜ挑むのかを宣言する（任意）
+            </h2>
+            <p className="text-xs text-gray-400 mb-4">
+              自分の言葉で「なぜこの旅を始めるのか」を書き残すと、迷った日に立ち戻れる拠り所になります。
+              合格後に見返せる記録として、収穫画面とマイページに残ります。空欄のままでも次に進めます。
+            </p>
+
+            <div className="bg-emerald-950/30 border border-emerald-900/50 rounded-xl p-4 mb-4">
+              <div className="text-xs text-emerald-400 font-medium mb-2">
+                📜 {selectedCert.name} に挑む理由
+              </div>
+              <textarea
+                value={goalStatement}
+                onChange={(e) => setGoalStatement(e.target.value.slice(0, 200))}
+                placeholder="例：インフラ担当から脱却してアプリ側の設計もできるようになりたい／転職で武器になる肩書きが欲しい／半年後の自分を証明したい…"
+                rows={4}
+                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 resize-none"
+              />
+              <div className="flex justify-between text-[11px] text-gray-500 mt-1">
+                <span>※ この宣言はあなたの自律性を高めるためのものです（運営に共有されません）</span>
+                <span>{goalStatement.length}/200</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setGoalStatement("")}
+                className="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 text-sm"
+              >
+                空欄のままにする
+              </button>
+              <button
+                onClick={() => setStep("confirm")}
+                className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+              >
+                次へ
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: 確認（ドメイン表示なし、tips表示） */}
         {step === "confirm" && selectedCert && (
           <div>
             <h2 className="text-sm text-gray-300 mb-4 font-medium">栽培内容の確認</h2>
@@ -336,6 +391,16 @@ export default function NewCultivationPage() {
               {!selectedPartner && (
                 <div className="bg-gray-800 rounded-lg p-3 mb-4 text-sm text-gray-300">
                   純粋培養（配合なし）
+                </div>
+              )}
+
+              {/* 目標宣言のプレビュー */}
+              {goalStatement.trim() && (
+                <div className="bg-emerald-950/30 border border-emerald-900/50 rounded-lg p-3 mb-4">
+                  <div className="text-xs text-emerald-400 font-medium mb-1">📜 目標宣言</div>
+                  <div className="text-sm text-emerald-100 whitespace-pre-wrap">
+                    {goalStatement.trim()}
+                  </div>
                 </div>
               )}
 

@@ -341,7 +341,8 @@ function clamp(value: number, min: number, max: number): number {
 export function createInitialCultivation(
   certId: string,
   userId: string,
-  matingPartner: HarvestedMushroom | null
+  matingPartner: HarvestedMushroom | null,
+  goalStatement: string = "",
 ): Omit<Cultivation, "id" | "createdAt" | "updatedAt"> {
   const cert = getCertificationById(certId);
   if (!cert) throw new Error(`Unknown certification: ${certId}`);
@@ -392,6 +393,8 @@ export function createInitialCultivation(
     streakDays: 0,
     totalDays: 0,
     lastRecordDate: null,
+    frozenDates: [],
+    goalStatement: goalStatement.trim().slice(0, 200),
     isCompleted: false,
     completedDate: null,
   };
@@ -425,9 +428,32 @@ export function updateCultivationWithLog(
     else totalOutputMinutes += log.minutes;
   }
 
+  // ── 逓減ボーナス（グッドハートの法則対策）──
+  // 同じ種別（subType）を1日で延々と繰り返すと XP 稼ぎの水増しになり、
+  // 「同じ簡単な参考書を周回する」といった本来の目的を損なう行動を誘発する。
+  // 1日のうち、同一種別の最初の90分は 100%、次の90分は 70%、それ以降は 40% に逓減させ、
+  // 新しい種別・苦手分野への挑戦を内発的に促す。
+  // ※総量の日次キャップは別途維持（DAILY_CAP）。
+  const sortedLogsForCumul = [...allLogs].sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    const aSec = a.createdAt?.seconds ?? 0;
+    const bSec = b.createdAt?.seconds ?? 0;
+    return aSec - bSec;
+  });
+  const cumulBySubType = new Map<string, number>(); // key=`${date}::${subType}`, value=既計上分
+  const effectiveMinutesByLogId = new Map<string, number>();
+  for (const log of sortedLogsForCumul) {
+    const key = `${log.date}::${log.subType}`;
+    const already = cumulBySubType.get(key) || 0;
+    const eff = diminishingEffectiveMinutes(log.minutes, already);
+    effectiveMinutesByLogId.set(log.id, eff);
+    cumulBySubType.set(key, already + log.minutes);
+  }
+
   const pointsByDay = new Map<string, { input: number; output: number }>();
   for (const log of allLogs) {
-    const pts = calculatePoints(log.minutes, log.condition ?? 3, log.fulfillment ?? 3, log.isPomodoro ?? false);
+    const effMin = effectiveMinutesByLogId.get(log.id) ?? log.minutes;
+    const pts = calculatePoints(effMin, log.condition ?? 3, log.fulfillment ?? 3, log.isPomodoro ?? false);
     const cur = pointsByDay.get(log.date) || { input: 0, output: 0 };
     if (log.type === "input") cur.input += pts;
     else cur.output += pts;
@@ -471,8 +497,9 @@ export function updateCultivationWithLog(
   // 環境パラメータ再計算
   const environmentParams = calculateEnvironmentParams(allLogs);
 
-  // 連続記録日数の計算
-  const sortedDates = [...new Set(allLogs.map(l => l.date))].sort();
+  // 連続記録日数の計算（菌糸休眠チケットで埋めた日も「記録あり」として扱う）
+  const frozenDates = cultivation.frozenDates ?? [];
+  const sortedDates = [...new Set([...allLogs.map(l => l.date), ...frozenDates])].sort();
   const streakDays = calculateStreak(sortedDates);
 
   // 経過日数
@@ -518,6 +545,82 @@ export function updateCultivationWithLog(
     avgFulfillment,
     conditionWarning,
   };
+}
+
+// ============================================
+// 逓減ボーナス（Goodhartの法則対策）
+// ============================================
+
+/**
+ * 同一種別の累積分数に応じて、今回の学習分数の「有効分数」を算出する。
+ *
+ * しきい値：
+ *  - 0〜90分（1.5時間）:   100%
+ *  - 90〜180分（〜3時間）: 70%
+ *  - 180分〜:              40%
+ *
+ * 「同じ簡単な参考書をひたすら周回する」といった指標ハックを抑制し、
+ * 新しい種別や苦手分野への多様な取り組みを内発的に促す。
+ */
+export function diminishingEffectiveMinutes(
+  newMinutes: number,
+  alreadyCumulated: number,
+): number {
+  const FULL_UNTIL = 90;
+  const HALF_UNTIL = 180;
+  let remaining = newMinutes;
+  let effective = 0;
+  let cumul = alreadyCumulated;
+
+  if (remaining > 0 && cumul < FULL_UNTIL) {
+    const chunk = Math.min(remaining, FULL_UNTIL - cumul);
+    effective += chunk;
+    remaining -= chunk;
+    cumul += chunk;
+  }
+  if (remaining > 0 && cumul < HALF_UNTIL) {
+    const chunk = Math.min(remaining, HALF_UNTIL - cumul);
+    effective += chunk * 0.7;
+    remaining -= chunk;
+    cumul += chunk;
+  }
+  if (remaining > 0) {
+    effective += remaining * 0.4;
+  }
+  return effective;
+}
+
+// ============================================
+// 菌糸休眠チケット（ストリーク・フリーズ）
+// ============================================
+
+/**
+ * 最終記録日から新規記録日までのギャップを検出し、フリーズで埋められる日付を列挙する。
+ *
+ * Duolingo のストリーク・フリーズと同等の機構：
+ * 「1日休んだだけで全てが台無し」という絶望を避け、自律性を尊重する安全網。
+ * 本アプリでは菌類ナラティブに寄せて「菌糸休眠チケット」と呼ぶ。
+ *
+ * @param lastRecordDate 直近の記録日（YYYY-MM-DD）
+ * @param newDate 新規記録の日付（YYYY-MM-DD）
+ * @returns フリーズで埋めるべき中間日のリスト（空なら埋める必要なし）
+ */
+export function computeGapDatesToFreeze(
+  lastRecordDate: string | null,
+  newDate: string,
+): string[] {
+  if (!lastRecordDate) return [];
+  const last = new Date(lastRecordDate + "T00:00:00");
+  const now = new Date(newDate + "T00:00:00");
+  const diffDays = Math.floor((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays <= 1) return []; // 連続 or 同日 → 埋め不要
+  const gaps: string[] = [];
+  for (let i = 1; i < diffDays; i++) {
+    const d = new Date(last);
+    d.setDate(d.getDate() + i);
+    gaps.push(d.toISOString().split("T")[0]);
+  }
+  return gaps;
 }
 
 /** 連続記録日数を計算 */

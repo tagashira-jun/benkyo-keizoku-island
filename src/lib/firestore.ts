@@ -36,7 +36,9 @@ import {
   createHarvestedMushroom,
   calculatePoints,
   evaluateAchievements,
+  computeGapDatesToFreeze,
 } from "./cultivation";
+import { UserPreferences } from "./types";
 
 function db() {
   return getFirebaseDb();
@@ -73,6 +75,73 @@ export async function updateUserName(uid: string, displayName: string): Promise<
   });
 }
 
+/**
+ * ユーザー設定を更新する（静かな栽培モード等）。
+ * undefined のフィールドは上書きしない（個別トグル用）。
+ */
+export async function updateUserPreferences(
+  uid: string,
+  patch: Partial<UserPreferences>,
+): Promise<void> {
+  const clean: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    if (v !== undefined) clean[`preferences.${k}`] = v;
+  }
+  if (Object.keys(clean).length === 0) return;
+  clean.updatedAt = serverTimestamp();
+  await updateDoc(doc(db(), "users", uid), clean);
+}
+
+/**
+ * 菌糸休眠チケット（フリーズ）を配布する。
+ * 既に配布済み数（freezeTokensGranted）と比較し、差分があれば付与する。
+ * ストリーク実績解除のたびに呼ばれる想定。
+ */
+export async function grantFreezeTokensIfNeeded(
+  uid: string,
+  targetGranted: number,
+): Promise<number> {
+  const user = await getUser(uid);
+  const alreadyGranted = user?.freezeTokensGranted ?? 0;
+  const diff = targetGranted - alreadyGranted;
+  if (diff <= 0) return 0;
+  await updateDoc(doc(db(), "users", uid), {
+    freezeTokens: increment(diff),
+    freezeTokensGranted: increment(diff),
+    updatedAt: serverTimestamp(),
+  });
+  return diff;
+}
+
+/**
+ * ギャップを菌糸休眠チケットで埋められる場合は消費する。
+ * 消費した日付を返す（ない場合は空配列）。
+ */
+async function consumeFreezeTokensForGap(
+  uid: string,
+  cultivationId: string,
+  lastRecordDate: string | null,
+  newDate: string,
+  existingFrozenDates: string[],
+): Promise<string[]> {
+  const gaps = computeGapDatesToFreeze(lastRecordDate, newDate)
+    .filter(d => !existingFrozenDates.includes(d));
+  if (gaps.length === 0) return [];
+
+  const user = await getUser(uid);
+  const tokens = user?.freezeTokens ?? 0;
+  const canCover = Math.min(tokens, gaps.length);
+  if (canCover <= 0) return [];
+
+  // 連続記録維持のため、最新ギャップ日から消費（手前の欠けは諦める）
+  const toFreeze = gaps.slice(-canCover);
+  await updateDoc(doc(db(), "users", uid), {
+    freezeTokens: increment(-canCover),
+    updatedAt: serverTimestamp(),
+  });
+  return toFreeze;
+}
+
 // ============================================
 // Cultivations（栽培中のキノコ）
 // ============================================
@@ -81,9 +150,10 @@ export async function updateUserName(uid: string, displayName: string): Promise<
 export async function startCultivation(
   userId: string,
   certificationId: string,
-  matingPartner: HarvestedMushroom | null
+  matingPartner: HarvestedMushroom | null,
+  goalStatement: string = "",
 ): Promise<string> {
-  const data = createInitialCultivation(certificationId, userId, matingPartner);
+  const data = createInitialCultivation(certificationId, userId, matingPartner, goalStatement);
   const docRef = await addDoc(collection(db(), "cultivations"), {
     ...data,
     createdAt: serverTimestamp(),
@@ -157,6 +227,10 @@ export async function addStudyLog(data: {
   phaseBefore: number;
   phaseAfter: number;
   newlyUnlockedAchievements: string[];
+  /** 今回の記録でフリーズチケットを消費して連続記録を守った日付 */
+  frozenDatesConsumed: string[];
+  /** 実績解除の結果、今回新たに付与された菌糸休眠チケット枚数 */
+  freezeTokensAwarded: number;
 }> {
   // 記録を保存
   const docRef = await addDoc(collection(db(), "studyLogs"), {
@@ -174,12 +248,35 @@ export async function addStudyLog(data: {
   const cultivation = await getCultivation(data.cultivationId);
   let phaseBefore = 1;
   let phaseAfter = 1;
+  let frozenDatesConsumed: string[] = [];
 
   if (cultivation) {
     phaseBefore = cultivation.phase;
-    const updates = updateCultivationWithLog(cultivation, newLog, allLogs);
+
+    // 菌糸休眠チケットでギャップを埋められるか判定し、消費する
+    frozenDatesConsumed = await consumeFreezeTokensForGap(
+      data.userId,
+      data.cultivationId,
+      cultivation.lastRecordDate,
+      data.date,
+      cultivation.frozenDates ?? [],
+    );
+    const nextFrozenDates = [
+      ...(cultivation.frozenDates ?? []),
+      ...frozenDatesConsumed,
+    ];
+
+    // フリーズ込みで栽培状態を更新
+    const cultivationForCalc: Cultivation = {
+      ...cultivation,
+      frozenDates: nextFrozenDates,
+    };
+    const updates = updateCultivationWithLog(cultivationForCalc, newLog, allLogs);
     phaseAfter = (updates.phase as number) || cultivation.phase;
-    await updateCultivation(data.cultivationId, updates);
+    await updateCultivation(data.cultivationId, {
+      ...updates,
+      frozenDates: nextFrozenDates,
+    });
 
     await updateDoc(doc(db(), "users", data.userId), {
       totalStudyMinutes: increment(data.minutes),
@@ -190,12 +287,38 @@ export async function addStudyLog(data: {
   // 実績チェック
   const newlyUnlockedAchievements = await checkAndUnlockAchievements(data.userId);
 
+  // 菌糸休眠チケットの配布（ストリーク実績の段階に応じて累計配布数を調整）
+  // streak_7=+1, streak_30=+2(累計3), streak_100=+3(累計6) になるよう設計
+  const freezeTokensAwarded = await maybeGrantStreakFreezeTokens(data.userId);
+
   return {
     logId: docRef.id,
     phaseBefore,
     phaseAfter,
     newlyUnlockedAchievements,
+    frozenDatesConsumed,
+    freezeTokensAwarded,
   };
+}
+
+/**
+ * ストリーク実績の解除状況に応じて菌糸休眠チケットを配布する。
+ * 重複配布を避けるため freezeTokensGranted と比較し、差分のみ付与。
+ *
+ * 配布設計（情報的報酬として、絶望を防ぐ「安全網」の意味づけ）：
+ *  - streak_7 達成   → 累計 1 枚
+ *  - streak_30 達成  → 累計 3 枚
+ *  - streak_100 達成 → 累計 6 枚
+ */
+async function maybeGrantStreakFreezeTokens(uid: string): Promise<number> {
+  const achievements = await getUserAchievements(uid);
+  const ids = new Set(achievements.map(a => a.achievementId));
+  let target = 0;
+  if (ids.has("streak_7")) target = 1;
+  if (ids.has("streak_30")) target = 3;
+  if (ids.has("streak_100")) target = 6;
+  if (target === 0) return 0;
+  return grantFreezeTokensIfNeeded(uid, target);
 }
 
 /** 栽培に紐づく全記録を取得 */

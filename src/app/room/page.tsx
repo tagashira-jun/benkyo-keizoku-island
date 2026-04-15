@@ -4,9 +4,41 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getUserRoom, getUserHarvestedMushrooms, getUserAchievements, updateRoom } from "@/lib/firestore";
 import { getMushroomSpecies, ACHIEVEMENTS, getCertificationById } from "@/lib/masterdata";
-import type { Room, HarvestedMushroom, UserAchievement } from "@/lib/types";
+import type { Room, HarvestedMushroom, UserAchievement, Achievement } from "@/lib/types";
 import MushroomSVG from "@/components/mushroom/MushroomSVG";
 import Link from "next/link";
+
+/** 実績icon名を絵文字にマップ（コレクション棚の視覚表現） */
+function iconToEmoji(icon: string): string {
+  const map: Record<string, string> = {
+    "sprout": "🌱",
+    "git-branch": "🌿",
+    "zap": "⚡",
+    "award": "🏅",
+    "package": "📦",
+    "network": "🕸️",
+    "trophy": "🏆",
+    "maximize": "📏",
+    "layers": "📚",
+    "git-merge": "🔗",
+    "link": "🧬",
+    "book-open": "📖",
+    "calendar": "📅",
+    "flame": "🔥",
+    "crown": "👑",
+    "clock": "⏰",
+    "hourglass": "⏳",
+    "trees": "🌳",
+    "target": "🎯",
+    "pen-tool": "✒️",
+    "edit-3": "✏️",
+    "scale": "⚖️",
+    "palette": "🎨",
+    "book": "📓",
+    "users": "👥",
+  };
+  return map[icon] ?? "🎁";
+}
 
 export default function RoomPage() {
   const { firebaseUser } = useAuth();
@@ -14,6 +46,7 @@ export default function RoomPage() {
   const [harvested, setHarvested] = useState<HarvestedMushroom[]>([]);
   const [achievements, setAchievements] = useState<UserAchievement[]>([]);
   const [editMode, setEditMode] = useState(false);
+  const [showRewardInfo, setShowRewardInfo] = useState(false);
 
   useEffect(() => {
     if (!firebaseUser) return;
@@ -42,8 +75,24 @@ export default function RoomPage() {
     setRoom({ ...room, displayedMushroomIds: updated });
   }
 
+  /** 報酬アイテムの展示状態をトグル（unlockedItemIds を表示中リストとして流用） */
+  async function toggleRewardDisplay(itemId: string) {
+    if (!firebaseUser || !room) return;
+    const current = room.unlockedItemIds || [];
+    const updated = current.includes(itemId)
+      ? current.filter(id => id !== itemId)
+      : [...current, itemId];
+    await updateRoom(firebaseUser.uid, { unlockedItemIds: updated });
+    setRoom({ ...room, unlockedItemIds: updated });
+  }
+
   const displayedMushrooms = harvested.filter(h => room?.displayedMushroomIds?.includes(h.id));
   const unlockedAchievementIds = new Set(achievements.map(a => a.achievementId));
+
+  // 解除済み実績から報酬アイテムを抽出
+  const unlockedRewards: Achievement[] = ACHIEVEMENTS.filter((a) => unlockedAchievementIds.has(a.id));
+  const displayedRewardIds = new Set(room?.unlockedItemIds ?? []);
+  const displayedRewards = unlockedRewards.filter((a) => displayedRewardIds.has(a.rewardItemId));
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -136,10 +185,113 @@ export default function RoomPage() {
           </div>
         )}
 
+        {/* コレクション棚（解除済み報酬アイテムを飾る） */}
+        <div className="mb-6">
+          <div className="flex items-baseline justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-200">🎁 コレクション棚</h3>
+              <button
+                onClick={() => setShowRewardInfo(true)}
+                className="w-5 h-5 rounded-full bg-purple-900/60 hover:bg-purple-800 text-purple-300 text-xs font-bold flex items-center justify-center transition"
+                title="報酬について"
+              >
+                ？
+              </button>
+            </div>
+            <span className="text-xs text-gray-300">
+              解除: {unlockedRewards.length} 点
+            </span>
+          </div>
+
+          {/* 飾り中の報酬アイテム（木目調の棚風デザイン） */}
+          <div
+            className="rounded-2xl p-4 min-h-[140px] border border-amber-900/40"
+            style={{
+              backgroundImage:
+                "linear-gradient(180deg, rgba(120, 53, 15, 0.25) 0%, rgba(41, 37, 36, 0.6) 100%)",
+              boxShadow: "inset 0 -8px 16px rgba(0,0,0,0.35)",
+            }}
+          >
+            {displayedRewards.length === 0 ? (
+              <div className="text-center py-6 text-gray-500 text-xs">
+                <div className="text-3xl mb-1 opacity-60">🗄️</div>
+                <p>飾られた報酬はまだありません</p>
+                <p className="mt-1 text-gray-600">
+                  {unlockedRewards.length > 0
+                    ? "編集ボタンから飾りたいアイテムを選べます"
+                    : "実績を解除するとここに報酬アイテムが並びます"}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-2">
+                {displayedRewards.map((ach) => (
+                  <div
+                    key={ach.rewardItemId}
+                    className="bg-gray-900/70 border border-amber-800/30 rounded-lg p-2 text-center relative"
+                    title={`${ach.rewardItemName} / ${ach.name}`}
+                  >
+                    <div className="text-2xl leading-none mb-1">{iconToEmoji(ach.icon)}</div>
+                    <div className="text-[9px] text-gray-300 truncate">{ach.rewardItemName}</div>
+                    {editMode && (
+                      <button
+                        onClick={() => toggleRewardDisplay(ach.rewardItemId)}
+                        className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full text-xs flex items-center justify-center"
+                      >
+                        &times;
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 編集モード時：解除済みアイテム一覧（飾る/外すの切替） */}
+          {editMode && unlockedRewards.length > 0 && (
+            <div className="mt-4">
+              <h4 className="text-xs text-gray-400 mb-2">解除済みアイテムから飾る</h4>
+              <div className="grid grid-cols-4 gap-2">
+                {unlockedRewards.map((ach) => {
+                  const isDisplayed = displayedRewardIds.has(ach.rewardItemId);
+                  return (
+                    <button
+                      key={ach.rewardItemId}
+                      onClick={() => toggleRewardDisplay(ach.rewardItemId)}
+                      className={`rounded-lg p-2 text-center border transition ${
+                        isDisplayed
+                          ? "bg-purple-950/40 border-purple-500"
+                          : "bg-gray-900 border-gray-800 hover:border-gray-600"
+                      }`}
+                    >
+                      <div className="text-2xl leading-none mb-1">{iconToEmoji(ach.icon)}</div>
+                      <div className="text-[9px] text-gray-300 truncate">{ach.rewardItemName}</div>
+                      <div className="text-[9px] mt-0.5">
+                        {isDisplayed
+                          ? <span className="text-purple-300">飾り中</span>
+                          : <span className="text-gray-600">倉庫</span>
+                        }
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* 実績一覧（カテゴリ別） */}
         <div>
           <div className="flex items-baseline justify-between mb-3">
-            <h3 className="text-sm font-medium text-gray-200">実績</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-200">実績</h3>
+              <button
+                onClick={() => setShowRewardInfo(true)}
+                className="w-5 h-5 rounded-full bg-emerald-900/60 hover:bg-emerald-800 text-emerald-300 text-xs font-bold flex items-center justify-center transition"
+                title="報酬について"
+              >
+                ？
+              </button>
+            </div>
             <span className="text-xs text-gray-300">
               {unlockedAchievementIds.size} / {ACHIEVEMENTS.length} 解除
             </span>
@@ -200,6 +352,81 @@ export default function RoomPage() {
           })}
         </div>
       </div>
+
+      {/* 報酬の説明モーダル */}
+      {showRewardInfo && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setShowRewardInfo(false)}
+        >
+          <div
+            className="bg-gray-900 border border-emerald-700/50 rounded-2xl max-w-md w-full p-6 max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-center mb-4">
+              <div className="text-4xl mb-2">🎁</div>
+              <h2 className="text-lg font-bold text-emerald-300">実績と報酬について</h2>
+            </div>
+
+            <div className="space-y-4 text-sm text-gray-200 leading-relaxed">
+              <div>
+                <div className="font-semibold text-emerald-200 mb-1">📋 実績とは？</div>
+                <p className="text-xs text-gray-300">
+                  あなたの学習・栽培の歩みを記録する「証」です。
+                  「3日連続で記録」「初めてアウトプット」など、条件を満たすと <span className="text-emerald-300 font-medium">自動で解除</span> されます。
+                </p>
+              </div>
+
+              <div>
+                <div className="font-semibold text-emerald-200 mb-1">⚡ 受け取り方</div>
+                <p className="text-xs text-gray-300">
+                  <span className="text-emerald-300 font-medium">すべて自動受け取りです。</span>
+                  条件を満たした瞬間、記録画面からトップに戻った時に「🎉 実績解除！」のバナーで通知されます。
+                  この画面の実績カードも <span className="text-emerald-300">✓</span> 点灯状態に変わります。
+                </p>
+              </div>
+
+              <div>
+                <div className="font-semibold text-purple-200 mb-1">🎁 報酬アイテムとは？</div>
+                <p className="text-xs text-gray-300">
+                  実績と対になる <span className="text-purple-300 font-medium">記念コレクション</span> です（例：シャーレ、培地バッグ、炎バッジ）。
+                  解除されたアイテムは自動で「倉庫」に入り、
+                  <span className="text-purple-300 font-medium">🎁 コレクション棚</span> にいつでも飾れます。
+                </p>
+              </div>
+
+              <div>
+                <div className="font-semibold text-purple-200 mb-1">🗄️ 飾り方</div>
+                <p className="text-xs text-gray-300">
+                  右上の <span className="text-white font-medium">「編集」</span> ボタン → コレクション棚の下に表示される「解除済みアイテム」からタップで飾る／外すを切り替えできます。
+                  飾り中は <span className="text-purple-300">紫枠＋「飾り中」</span>、倉庫に戻すと非表示になります。
+                </p>
+              </div>
+
+              <div>
+                <div className="font-semibold text-amber-200 mb-1">🍄 展示棚とは別物です</div>
+                <p className="text-xs text-gray-300">
+                  上の「展示棚」に飾れるのは <span className="text-amber-300 font-medium">あなたが収穫したキノコ</span>（資格取得の成果物）です。
+                  実績報酬（コレクション棚）とは別枠で、Phase 6 まで育てて「収穫」したキノコが追加されていきます。
+                </p>
+              </div>
+
+              <div className="bg-emerald-950/40 border border-emerald-800/50 rounded-lg px-3 py-2">
+                <p className="text-xs text-emerald-200">
+                  💡 <span className="font-semibold">確認方法</span>：このページの実績一覧で、✓がついているものが解除済み・🔒がついているものが未解除です。下までスクロールして全体を見渡せます。
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowRewardInfo(false)}
+              className="w-full mt-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium"
+            >
+              なるほど！
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

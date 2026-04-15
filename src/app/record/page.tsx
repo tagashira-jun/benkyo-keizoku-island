@@ -11,10 +11,13 @@ import Link from "next/link";
 import PomodoroTimer, { type PomodoroTimerHandle } from "@/components/PomodoroTimer";
 
 function RecordContent() {
-  const { firebaseUser } = useAuth();
+  const { firebaseUser, userProfile } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedId = searchParams.get("cultivationId");
+
+  // 停止ポイント通知（ウェルビーイング）設定：デフォルトON
+  const stoppingPointEnabled = userProfile?.preferences?.stoppingPointEnabled ?? true;
 
   const [cultivations, setCultivations] = useState<Cultivation[]>([]);
   const [selectedCultivationId, setSelectedCultivationId] = useState<string>(preselectedId || "");
@@ -65,6 +68,14 @@ function RecordContent() {
       });
     });
   }, [selectedCultivationId]);
+
+  // 今日の累計学習時間（停止ポイント通知の判定用）
+  const todayMinutes = (() => {
+    const today = new Date().toISOString().split("T")[0];
+    return recentLogs
+      .filter((l) => l.date === today)
+      .reduce((sum, l) => sum + (l.minutes || 0), 0);
+  })();
 
   // 種別候補リスト（サジェスト + 過去履歴、重複排除）
   const suggestions = (() => {
@@ -121,6 +132,12 @@ function RecordContent() {
       if (result.newlyUnlockedAchievements.length > 0) {
         params.set("achievements", result.newlyUnlockedAchievements.join(","));
       }
+      if (result.frozenDatesConsumed && result.frozenDatesConsumed.length > 0) {
+        params.set("frozen", result.frozenDatesConsumed.join(","));
+      }
+      if (result.freezeTokensAwarded && result.freezeTokensAwarded > 0) {
+        params.set("freezeAwarded", String(result.freezeTokensAwarded));
+      }
       router.push(`/?${params.toString()}`);
     } finally {
       setSubmitting(false);
@@ -140,7 +157,7 @@ function RecordContent() {
     const finalSubType = subTypeInput.trim() || subType || (recordType === "input" ? "インプット" : "アウトプット");
     setSubmitting(true);
     try {
-      await addStudyLog({
+      const result = await addStudyLog({
         userId: firebaseUser.uid,
         cultivationId: selectedCultivationId,
         type: recordType,
@@ -152,6 +169,31 @@ function RecordContent() {
         fulfillment,
         isPomodoro: true,
       });
+      // 休眠チケット消費 or 獲得があった場合はトップへ遷移して通知
+      if (
+        (result.frozenDatesConsumed && result.frozenDatesConsumed.length > 0) ||
+        (result.freezeTokensAwarded && result.freezeTokensAwarded > 0)
+      ) {
+        const params = new URLSearchParams({
+          updated: "1",
+          cultivationId: selectedCultivationId,
+          minutes: String(pomoPending),
+          type: recordType,
+          phaseBefore: String(result.phaseBefore),
+          phaseAfter: String(result.phaseAfter),
+        });
+        if (result.newlyUnlockedAchievements.length > 0) {
+          params.set("achievements", result.newlyUnlockedAchievements.join(","));
+        }
+        if (result.frozenDatesConsumed && result.frozenDatesConsumed.length > 0) {
+          params.set("frozen", result.frozenDatesConsumed.join(","));
+        }
+        if (result.freezeTokensAwarded && result.freezeTokensAwarded > 0) {
+          params.set("freezeAwarded", String(result.freezeTokensAwarded));
+        }
+        router.push(`/?${params.toString()}`);
+        return;
+      }
       setPomoStatus(`✓ ${pomoPending}分を記録（+30% ボーナス）`);
       setPomoPending(null);
       pomoTimerRef.current?.startBreak();
@@ -184,6 +226,30 @@ function RecordContent() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-6">
+        {/* 停止ポイント通知（ウェルビーイング） */}
+        {stoppingPointEnabled && todayMinutes >= 240 && (
+          <div className="mb-4 bg-rose-950/50 border border-rose-800 rounded-xl px-4 py-3">
+            <div className="text-sm font-semibold text-rose-200 mb-1">
+              🛌 今日はもう十分がんばりました
+            </div>
+            <div className="text-xs text-rose-100/80 leading-relaxed">
+              すでに今日は <span className="font-bold text-white">{todayMinutes}分</span> 学習しています。
+              休息もキノコの成長に必要です。脳を休めて、また明日。
+            </div>
+          </div>
+        )}
+        {stoppingPointEnabled && todayMinutes >= 180 && todayMinutes < 240 && (
+          <div className="mb-4 bg-amber-950/40 border border-amber-800/70 rounded-xl px-4 py-3">
+            <div className="text-sm font-semibold text-amber-200 mb-1">
+              ☕ そろそろ一息つきませんか？
+            </div>
+            <div className="text-xs text-amber-100/80 leading-relaxed">
+              今日はすでに <span className="font-bold text-white">{todayMinutes}分</span> 学習しています。
+              休息は怠けではなく、記憶を定着させる工程です。
+            </div>
+          </div>
+        )}
+
         {/* 栽培選択 */}
         {cultivations.length > 1 && (
           <div className="mb-4">

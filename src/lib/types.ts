@@ -11,8 +11,31 @@ export interface UserProfile {
   email: string;
   photoURL: string;
   totalStudyMinutes: number;
+  /**
+   * 菌糸休眠チケット（ストリーク・フリーズ）の残枚数。
+   * 1枚で過去の学習を1日分「菌糸が休眠していた」ことにでき、連続記録を途切れさせない。
+   * ストリーク実績解除時に配布される。
+   */
+  freezeTokens?: number;
+  /**
+   * これまでに獲得した菌糸休眠チケット累計（実績配布重複を避けるため）
+   */
+  freezeTokensGranted?: number;
+  /** ユーザー設定（オプトアウト等） */
+  preferences?: UserPreferences;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+/**
+ * ゲーミフィケーション機能のオプトアウト設定。
+ * 競争・比較・焦燥感を避けたいユーザー向けの「静かな栽培モード」。
+ */
+export interface UserPreferences {
+  /** 静かな栽培モード: ストリーク・連続記録表示を抑制（自分のペースで栽培したい人向け） */
+  quietMode?: boolean;
+  /** 停止ポイント通知: 長時間学習時に休息を促す（デフォルトON） */
+  stoppingPointEnabled?: boolean;
 }
 
 // ============================================
@@ -220,6 +243,19 @@ export interface Cultivation {
   avgCondition?: number;      // 直近記録の平均体調（1〜5）
   avgFulfillment?: number;    // 直近記録の平均充実感（1〜5）
   conditionWarning?: boolean; // 無理しすぎ警告（体調2以下が3日以上続いた）
+
+  /**
+   * 菌糸休眠チケット（フリーズ）で連続記録を維持した日付のリスト。
+   * ストリーク計算時は「記録があった日」と同等に扱われる。
+   */
+  frozenDates?: string[];
+
+  /**
+   * 目標宣言（Epic Meaning）：なぜこの資格・プロジェクトに挑むのか。
+   * 栽培開始時にユーザーが自ら宣言する、自律性を高めるための文脈情報。
+   * 空文字列なら宣言をスキップしたことを意味する。
+   */
+  goalStatement?: string;
 
   isCompleted: boolean;
   completedDate: string | null;
