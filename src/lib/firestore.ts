@@ -151,6 +151,7 @@ export async function addStudyLog(data: {
   date: string;
   condition?: number;
   fulfillment?: number;
+  isPomodoro?: boolean;
 }): Promise<{
   logId: string;
   phaseBefore: number;

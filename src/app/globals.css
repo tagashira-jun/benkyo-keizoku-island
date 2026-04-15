@@ -84,3 +84,45 @@ select {
   transform-origin: left;
   animation: bar-fill 0.8s ease-out;
 }
+
+/* ポモドーロ: 作業中の筋トレ風バウンド */
+@keyframes pomo-workout {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  25%      { transform: translateY(-6px) scale(1.02, 0.98); }
+  50%      { transform: translateY(2px)  scale(0.98, 1.03); }
+  75%      { transform: translateY(-4px) scale(1.01, 0.99); }
+}
+.pomo-workout {
+  animation: pomo-workout 0.9s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+/* ポモドーロ: 休憩中のゆったり揺れ */
+@keyframes pomo-rest {
+  0%, 100% { transform: rotate(-3deg) translateY(0); }
+  50%      { transform: rotate(3deg)  translateY(-2px); }
+}
+.pomo-rest {
+  animation: pomo-rest 3.2s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+/* ポモドーロ: 汗マーク */
+@keyframes pomo-sweat {
+  0%   { transform: translate(0, 0) scale(0.6); opacity: 0; }
+  30%  { opacity: 1; }
+  100% { transform: translate(12px, 28px) scale(1); opacity: 0; }
+}
+.pomo-sweat {
+  animation: pomo-sweat 1.4s ease-in infinite;
+}
+
+/* ポモドーロ: Zzz */
+@keyframes pomo-zzz {
+  0%   { transform: translate(0, 0) scale(0.8); opacity: 0; }
+  30%  { opacity: 1; }
+  100% { transform: translate(18px, -28px) scale(1.2); opacity: 0; }
+}
+.pomo-zzz {
+  animation: pomo-zzz 2.8s ease-out infinite;
+}

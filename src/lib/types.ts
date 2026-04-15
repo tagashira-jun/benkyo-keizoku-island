@@ -282,6 +282,8 @@ export interface StudyLog {
   condition?: number;
   /** 学習後の充実感・達成感（1:いまいち 2:まあまあ 3:ふつう 4:やりきった 5:最高）。省略時=3 */
   fulfillment?: number;
+  /** ポモドーロタイマーで計測した記録（ポイント×1.3ボーナス） */
+  isPomodoro?: boolean;
   createdAt: Timestamp;
 }
 

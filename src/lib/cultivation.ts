@@ -159,7 +159,12 @@ export function calculateEnvironmentParams(logs: StudyLog[]): EnvironmentParams 
  *   - 充実感1（いまいち）: ×0.85  充実感5（最高）: ×1.15
  * 無理して学習しても、体調が悪ければ成長は鈍る。
  */
-export function calculatePoints(minutes: number, condition: number = 3, fulfillment: number = 3): number {
+export function calculatePoints(
+  minutes: number,
+  condition: number = 3,
+  fulfillment: number = 3,
+  isPomodoro: boolean = false,
+): number {
   const conditionMult =
     condition <= 1 ? 0.7 :
     condition === 2 ? 0.85 :
@@ -172,7 +177,9 @@ export function calculatePoints(minutes: number, condition: number = 3, fulfillm
     fulfillment === 3 ? 1.0 :
     fulfillment === 4 ? 1.08 :
     1.15;
-  return minutes * conditionMult * fulfillmentMult;
+  // ポモドーロで集中して取り組んだ学習は +30% ボーナス
+  const pomodoroMult = isPomodoro ? 1.3 : 1.0;
+  return minutes * conditionMult * fulfillmentMult * pomodoroMult;
 }
 
 // ============================================
@@ -420,7 +427,7 @@ export function updateCultivationWithLog(
 
   const pointsByDay = new Map<string, { input: number; output: number }>();
   for (const log of allLogs) {
-    const pts = calculatePoints(log.minutes, log.condition ?? 3, log.fulfillment ?? 3);
+    const pts = calculatePoints(log.minutes, log.condition ?? 3, log.fulfillment ?? 3, log.isPomodoro ?? false);
     const cur = pointsByDay.get(log.date) || { input: 0, output: 0 };
     if (log.type === "input") cur.input += pts;
     else cur.output += pts;

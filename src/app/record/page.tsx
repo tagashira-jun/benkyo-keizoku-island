@@ -8,6 +8,7 @@ import { getCertificationById } from "@/lib/masterdata";
 import { MINUTES_OPTIONS, INPUT_SUGGESTIONS, OUTPUT_SUGGESTIONS, CONDITION_OPTIONS, FULFILLMENT_OPTIONS } from "@/lib/types";
 import type { Cultivation, StudyLog } from "@/lib/types";
 import Link from "next/link";
+import PomodoroTimer, { type PomodoroTimerHandle } from "@/components/PomodoroTimer";
 
 function RecordContent() {
   const { firebaseUser } = useAuth();
@@ -28,6 +29,11 @@ function RecordContent() {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [submitting, setSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [mode, setMode] = useState<"manual" | "pomodoro">("manual");
+  const [pomoStatus, setPomoStatus] = useState<string>("");
+  /** ワーク完了後、フォーム入力と記録待ちの分数。null=作業中/未開始 */
+  const [pomoPending, setPomoPending] = useState<number | null>(null);
+  const pomoTimerRef = useRef<PomodoroTimerHandle>(null);
   const [recentLogs, setRecentLogs] = useState<StudyLog[]>([]);
   const [customHistory, setCustomHistory] = useState<{ input: string[]; output: string[] }>({ input: [], output: [] });
   const suggestionsRef = useRef<HTMLDivElement>(null);
@@ -101,6 +107,7 @@ function RecordContent() {
         date,
         condition,
         fulfillment,
+        isPomodoro: false,
       });
       // メイン画面に遷移して変化をハイライト
       const params = new URLSearchParams({
@@ -115,6 +122,42 @@ function RecordContent() {
         params.set("achievements", result.newlyUnlockedAchievements.join(","));
       }
       router.push(`/?${params.toString()}`);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  /** ポモドーロのワークセッション1回完了時に呼ばれる（タイマー停止→フォーム入力待ち） */
+  function handlePomodoroComplete(workedMinutes: number) {
+    setPomoPending(workedMinutes);
+    setMemo("");
+    setPomoStatus(`🎉 ${workedMinutes}分完了！体調・充実感・メモを入力して記録してください`);
+  }
+
+  /** ポモドーロの記録ボタン押下：保存 → 休憩フェーズ開始 */
+  async function handlePomodoroSave() {
+    if (!firebaseUser || !selectedCultivationId || pomoPending == null) return;
+    const finalSubType = subTypeInput.trim() || subType || (recordType === "input" ? "インプット" : "アウトプット");
+    setSubmitting(true);
+    try {
+      await addStudyLog({
+        userId: firebaseUser.uid,
+        cultivationId: selectedCultivationId,
+        type: recordType,
+        subType: finalSubType,
+        minutes: pomoPending,
+        memo,
+        date: new Date().toISOString().split("T")[0],
+        condition,
+        fulfillment,
+        isPomodoro: true,
+      });
+      setPomoStatus(`✓ ${pomoPending}分を記録（+30% ボーナス）`);
+      setPomoPending(null);
+      pomoTimerRef.current?.startBreak();
+      setTimeout(() => setPomoStatus(""), 4000);
+    } catch {
+      setPomoStatus("記録に失敗しました");
     } finally {
       setSubmitting(false);
     }
@@ -157,6 +200,30 @@ function RecordContent() {
             </select>
           </div>
         )}
+
+        {/* モード切替: 手動 / ポモドーロ */}
+        <div className="flex gap-2 mb-4 bg-gray-900 p-1 rounded-lg border border-gray-800">
+          <button
+            onClick={() => setMode("manual")}
+            className={`flex-1 py-2 rounded-md font-medium text-sm transition ${
+              mode === "manual"
+                ? "bg-emerald-600 text-white"
+                : "text-gray-400 hover:bg-gray-800"
+            }`}
+          >
+            📝 手動で記録
+          </button>
+          <button
+            onClick={() => setMode("pomodoro")}
+            className={`flex-1 py-2 rounded-md font-medium text-sm transition ${
+              mode === "pomodoro"
+                ? "bg-orange-600 text-white"
+                : "text-gray-400 hover:bg-gray-800"
+            }`}
+          >
+            🍅 ポモドーロタイマー <span className="text-[10px] opacity-90">+30%</span>
+          </button>
+        </div>
 
         {/* Input / Output 切替 */}
         <div className="flex gap-2 mb-4">
@@ -208,7 +275,71 @@ function RecordContent() {
           )}
         </div>
 
-        {/* 時間（15分刻み） */}
+        {/* ポモドーロタイマー（種別の下に配置） */}
+        {mode === "pomodoro" && (
+          <div className="mb-6">
+            <PomodoroTimer
+              ref={pomoTimerRef}
+              cultivation={cultivations.find((c) => c.id === selectedCultivationId) ?? null}
+              onWorkComplete={handlePomodoroComplete}
+            />
+            {pomoStatus && (
+              <div className="mt-3 bg-orange-900/40 border border-orange-700 rounded-lg px-4 py-2 text-orange-200 text-center text-sm">
+                {pomoStatus}
+              </div>
+            )}
+            {pomoPending == null && (
+              <div className="mt-4 bg-gray-900/60 border border-gray-800 rounded-lg p-4 leading-relaxed space-y-3">
+                <div className="font-semibold text-gray-100 text-sm flex items-center gap-2">
+                  🍅 ポモドーロタイマーとは？
+                </div>
+
+                <p className="text-xs text-gray-300">
+                  1960年代にフランチェスコ・シリロが考案した<span className="text-orange-300 font-semibold">時間管理術</span>です。
+                  「集中 → 休憩」を1セットとして繰り返すことで、脳の疲れを防ぎながら高い集中力を維持できます。
+                </p>
+
+                <div className="text-xs text-gray-400 space-y-1.5">
+                  <div className="font-medium text-gray-200">⏱ 基本サイクル</div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-orange-400 font-bold shrink-0">1.</span>
+                    <span>タイマーを <span className="text-white">25分</span> にセットして、ひとつの課題だけに集中する</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-orange-400 font-bold shrink-0">2.</span>
+                    <span>タイマーが鳴ったら <span className="text-emerald-300">5分</span> 休憩する（席を立つ・水を飲むなど）</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-orange-400 font-bold shrink-0">3.</span>
+                    <span>4セット繰り返したら <span className="text-emerald-300">15〜30分</span> の長休憩を取る</span>
+                  </div>
+                </div>
+
+                <div className="text-xs text-gray-400 space-y-1">
+                  <div className="font-medium text-gray-200">✅ このアプリでの使い方</div>
+                  <ol className="list-decimal list-inside space-y-1 pl-1">
+                    <li>種別（参考書・問題集など）を選ぶ</li>
+                    <li>▶ スタート を押して集中を開始</li>
+                    <li>タイマーが終わったら体調・充実感・メモを入力</li>
+                    <li>🍅 記録して休憩へ を押すと保存＆休憩スタート</li>
+                  </ol>
+                </div>
+
+                <div className="text-xs bg-orange-950/40 border border-orange-800/50 rounded-md px-3 py-2">
+                  <span className="text-orange-300 font-semibold">+30% 成長ボーナス</span>
+                  <span className="text-gray-300"> がつくので、手動記録より効率よくキノコが育ちます！</span>
+                </div>
+
+                <p className="text-[11px] text-gray-500">
+                  💡 時間は上の設定で変更できます。集中が続かない初心者は <span className="text-gray-400">15分</span> から始めるのもおすすめです。
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 時間（15分刻み） - 手動モードのみ */}
+        {mode === "manual" && (
         <div className="mb-4">
           <label className="text-sm text-gray-200 block mb-2">学習時間</label>
           <div className="flex items-center gap-3 mb-2">
@@ -244,7 +375,10 @@ function RecordContent() {
             ))}
           </div>
         </div>
+        )}
 
+        {/* 体調・充実感・メモ: 手動モード常時 / ポモドーロモードは完了後のみ表示 */}
+        {(mode === "manual" || pomoPending != null) && (<>
         {/* 体調（学習中の状態） */}
         <div className="mb-4">
           <label className="text-sm text-gray-200 block mb-2">
@@ -301,7 +435,8 @@ function RecordContent() {
           )}
         </div>
 
-        {/* 日付 */}
+        {/* 日付 - 手動モードのみ（ポモドーロは今日扱い） */}
+        {mode === "manual" && (
         <div className="mb-4">
           <label className="text-sm text-gray-200 block mb-1">日付</label>
           <input
@@ -311,6 +446,7 @@ function RecordContent() {
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white"
           />
         </div>
+        )}
 
         {/* メモ */}
         <div className="mb-6">
@@ -323,8 +459,25 @@ function RecordContent() {
             placeholder="学んだこと、つまづいたこと..."
           />
         </div>
+        </>)}
 
-        {/* 記録ボタン */}
+        {/* ポモドーロ記録ボタン（完了後に表示） */}
+        {mode === "pomodoro" && pomoPending != null && (
+          <button
+            onClick={handlePomodoroSave}
+            disabled={submitting || !selectedCultivationId}
+            className={`w-full py-3 rounded-xl font-medium text-lg transition ${
+              submitting
+                ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                : "bg-orange-600 hover:bg-orange-700 text-white"
+            }`}
+          >
+            {submitting ? "記録中..." : `🍅 ${pomoPending}分を記録して休憩へ（+30%）`}
+          </button>
+        )}
+
+        {/* 記録ボタン - 手動モードのみ */}
+        {mode === "manual" && (
         <button
           onClick={handleSubmit}
           disabled={submitting || minutes <= 0 || !selectedCultivationId}
@@ -336,6 +489,7 @@ function RecordContent() {
         >
           {submitting ? "記録中..." : "記録する"}
         </button>
+        )}
 
         {showSuccess && (
           <div className="mt-3 bg-emerald-900/50 border border-emerald-700 rounded-lg px-4 py-2 text-emerald-300 text-center text-sm">
