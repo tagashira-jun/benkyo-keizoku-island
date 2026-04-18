@@ -29,7 +29,14 @@ import {
   Room,
   UserAchievement,
   DomainValues,
+  StudyRoadmap,
+  RoadmapChapter,
+  RoadmapTask,
+  TASK_XP_POMODORO,
+  TASK_XP_CHECKBOX,
+  CHAPTER_CLEAR_BONUS_XP,
 } from "./types";
+import { countTasks, isChapterComplete } from "./roadmap";
 import {
   createInitialCultivation,
   updateCultivationWithLog,
@@ -152,8 +159,15 @@ export async function startCultivation(
   certificationId: string,
   matingPartner: HarvestedMushroom | null,
   goalStatement: string = "",
+  customCert?: import("./types").CustomCertificationMeta,
 ): Promise<string> {
-  const data = createInitialCultivation(certificationId, userId, matingPartner, goalStatement);
+  const data = createInitialCultivation(
+    certificationId,
+    userId,
+    matingPartner,
+    goalStatement,
+    customCert,
+  );
   const docRef = await addDoc(collection(db(), "cultivations"), {
     ...data,
     createdAt: serverTimestamp(),
@@ -509,7 +523,7 @@ export async function unlockAchievement(userId: string, achievementId: string): 
  * 新規解除されたIDのリストを返す
  */
 export async function checkAndUnlockAchievements(userId: string): Promise<string[]> {
-  const [user, cultivations, harvested, existingAchievements, allLogs] = await Promise.all([
+  const [user, cultivations, harvested, existingAchievements, allLogs, roadmaps] = await Promise.all([
     getUser(userId),
     // アクティブのみではなく全件取得（完了後の判定に必要）
     getDocs(query(collection(db(), "cultivations"), where("userId", "==", userId))).then(snap =>
@@ -518,15 +532,169 @@ export async function checkAndUnlockAchievements(userId: string): Promise<string
     getUserHarvestedMushrooms(userId),
     getUserAchievements(userId),
     getUserStudyLogs(userId, 10000),
+    getUserRoadmaps(userId),
   ]);
 
   const totalStudyMinutes = user?.totalStudyMinutes || 0;
-  const candidates = evaluateAchievements({ cultivations, harvested, allLogs, totalStudyMinutes });
+  const candidates = evaluateAchievements({ cultivations, harvested, allLogs, totalStudyMinutes, roadmaps });
   const alreadyUnlocked = new Set(existingAchievements.map(a => a.achievementId));
   const newlyUnlocked = candidates.filter(id => !alreadyUnlocked.has(id));
 
   await Promise.all(newlyUnlocked.map(id => unlockAchievement(userId, id)));
   return newlyUnlocked;
+}
+
+// ============================================
+// Roadmap（学習ロードマップ）
+// ============================================
+
+/** 栽培に紐づくロードマップを1件取得（なければ null） */
+export async function getRoadmapByCultivation(
+  cultivationId: string,
+): Promise<StudyRoadmap | null> {
+  const q = query(
+    collection(db(), "roadmaps"),
+    where("cultivationId", "==", cultivationId),
+    limit(1),
+  );
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() } as StudyRoadmap;
+}
+
+/** ユーザーの全ロードマップを取得 */
+export async function getUserRoadmaps(userId: string): Promise<StudyRoadmap[]> {
+  const q = query(collection(db(), "roadmaps"), where("userId", "==", userId));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as StudyRoadmap);
+}
+
+/** ロードマップを作成（既にあれば上書き置換する） */
+export async function saveRoadmap(params: {
+  userId: string;
+  cultivationId: string;
+  goalText: string;
+  rawContent: string;
+  chapters: RoadmapChapter[];
+}): Promise<string> {
+  const existing = await getRoadmapByCultivation(params.cultivationId);
+  const { total, completed } = countTasks(params.chapters);
+
+  if (existing) {
+    await updateDoc(doc(db(), "roadmaps", existing.id), {
+      goalText: params.goalText,
+      rawContent: params.rawContent,
+      chapters: params.chapters,
+      totalTaskCount: total,
+      completedTaskCount: completed,
+      updatedAt: serverTimestamp(),
+    });
+    return existing.id;
+  }
+
+  const ref = await addDoc(collection(db(), "roadmaps"), {
+    userId: params.userId,
+    cultivationId: params.cultivationId,
+    goalText: params.goalText,
+    rawContent: params.rawContent,
+    chapters: params.chapters,
+    totalTaskCount: total,
+    completedTaskCount: completed,
+    totalXp: 0,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+/**
+ * タスクの完了フラグを切り替える。
+ * 戻り値に「獲得XP」「章クリアボーナス適用有無」を返し、呼び出し側で演出に使う。
+ */
+export async function toggleRoadmapTask(params: {
+  roadmapId: string;
+  chapterId: string;
+  taskId: string;
+  nextCompleted: boolean;
+}): Promise<{
+  totalXpGained: number;
+  chapterCleared: boolean;
+  updatedChapters: RoadmapChapter[];
+}> {
+  const snap = await getDoc(doc(db(), "roadmaps", params.roadmapId));
+  if (!snap.exists()) throw new Error("Roadmap not found");
+  const roadmap = { id: snap.id, ...snap.data() } as StudyRoadmap;
+
+  let xpGained = 0;
+  let chapterCleared = false;
+  const updatedChapters: RoadmapChapter[] = roadmap.chapters.map((c) => {
+    if (c.id !== params.chapterId) return c;
+    const prevComplete = isChapterComplete(c);
+    const nextTasks = c.tasks.map((t) => {
+      if (t.id !== params.taskId) return t;
+      // XP差分
+      if (!t.isCompleted && params.nextCompleted) {
+        xpGained += t.type === "pomodoro" ? TASK_XP_POMODORO : TASK_XP_CHECKBOX;
+      } else if (t.isCompleted && !params.nextCompleted) {
+        xpGained -= t.type === "pomodoro" ? TASK_XP_POMODORO : TASK_XP_CHECKBOX;
+      }
+      const next: RoadmapTask = {
+        ...t,
+        isCompleted: params.nextCompleted,
+        completedAt: params.nextCompleted ? new Date().toISOString() : undefined,
+      };
+      // Firestoreは undefined を許容しないのでキーを除去
+      if (next.completedAt === undefined) delete (next as Partial<RoadmapTask>).completedAt;
+      return next;
+    });
+    const nextChapter: RoadmapChapter = { ...c, tasks: nextTasks };
+    const nowComplete = isChapterComplete(nextChapter);
+    if (!prevComplete && nowComplete) {
+      chapterCleared = true;
+      xpGained += CHAPTER_CLEAR_BONUS_XP;
+    } else if (prevComplete && !nowComplete) {
+      xpGained -= CHAPTER_CLEAR_BONUS_XP;
+    }
+    return nextChapter;
+  });
+
+  const { total, completed } = countTasks(updatedChapters);
+  await updateDoc(doc(db(), "roadmaps", params.roadmapId), {
+    chapters: updatedChapters,
+    totalTaskCount: total,
+    completedTaskCount: completed,
+    totalXp: increment(xpGained),
+    updatedAt: serverTimestamp(),
+  });
+
+  return { totalXpGained: xpGained, chapterCleared, updatedChapters };
+}
+
+/** ポモドーロ完了時にタスクの pomodoroCount を+1する（表示用） */
+export async function incrementTaskPomodoro(params: {
+  roadmapId: string;
+  chapterId: string;
+  taskId: string;
+}): Promise<void> {
+  const snap = await getDoc(doc(db(), "roadmaps", params.roadmapId));
+  if (!snap.exists()) return;
+  const roadmap = { id: snap.id, ...snap.data() } as StudyRoadmap;
+  const updatedChapters = roadmap.chapters.map((c) => {
+    if (c.id !== params.chapterId) return c;
+    return {
+      ...c,
+      tasks: c.tasks.map((t) =>
+        t.id === params.taskId
+          ? { ...t, pomodoroCount: (t.pomodoroCount ?? 0) + 1 }
+          : t,
+      ),
+    };
+  });
+  await updateDoc(doc(db(), "roadmaps", params.roadmapId), {
+    chapters: updatedChapters,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 // ============================================

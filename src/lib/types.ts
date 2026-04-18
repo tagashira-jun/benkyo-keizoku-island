@@ -128,6 +128,21 @@ export interface CertificationMaster {
   phaseThresholds: PhaseThresholds;
 }
 
+/**
+ * ユーザーが自由入力した資格/目標のメタ情報。
+ * マスターのCertificationMasterと同じ属性を持つが、ユーザー個別のもの。
+ */
+export interface CustomCertificationMeta {
+  name: string;
+  description: string;
+  tips: string;
+  mushroomSpeciesId: MushroomSpeciesId;
+  difficulty: 1 | 2 | 3 | 4 | 5;
+  domains: DomainValues;
+  estimatedDays: number;
+  phaseThresholds: PhaseThresholds;
+}
+
 export interface PhaseThresholds {
   /** Phase1→2: 菌糸伸長に必要なインプットポイント */
   germinationInput: number;
@@ -256,6 +271,13 @@ export interface Cultivation {
    * 空文字列なら宣言をスキップしたことを意味する。
    */
   goalStatement?: string;
+
+  /**
+   * ユーザーが自由入力したカスタム資格のメタ情報。
+   * certificationId === "custom" のときに参照される。
+   * マスターに存在しない資格/目標にも栽培を開始できるようにするための仕組み。
+   */
+  customCert?: CustomCertificationMeta;
 
   isCompleted: boolean;
   completedDate: string | null;
@@ -436,3 +458,54 @@ export interface ProjectMilestone {
   isCompleted: boolean;
   completedDate: string | null;
 }
+
+// ============================================
+// 学習ロードマップ / TODO
+// ============================================
+
+/**
+ * Geminiが生成したロードマップを章立てで管理。
+ * 1つの栽培(Cultivation)に対して1つのロードマップが紐づく想定。
+ */
+export interface StudyRoadmap {
+  id: string;
+  userId: string;
+  cultivationId: string;
+  /** ユーザーが入力した目標テキスト（Geminiに投げた元ネタ） */
+  goalText: string;
+  /** Gemini出力の生テキスト（再パースや修正に備えて保存） */
+  rawContent: string;
+  chapters: RoadmapChapter[];
+  /** 章の総数（進捗計算キャッシュ） */
+  totalTaskCount: number;
+  completedTaskCount: number;
+  /** タスク完了で得た累積経験値 */
+  totalXp: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface RoadmapChapter {
+  id: string;
+  title: string;
+  /** 章のサブタイトル・ねらい（任意） */
+  summary?: string;
+  tasks: RoadmapTask[];
+}
+
+export interface RoadmapTask {
+  id: string;
+  title: string;
+  /** 25分以内ならポモドーロ対象、それ以外はチェックボックス */
+  estimatedMinutes: number;
+  type: "pomodoro" | "checkbox";
+  isCompleted: boolean;
+  completedAt?: string; // ISO
+  /** タスクに対して積まれたポモドーロ回数（=実績表示用） */
+  pomodoroCount?: number;
+}
+
+/** タスク1つ完了で得られる経験値（ベース値） */
+export const TASK_XP_POMODORO = 10;
+export const TASK_XP_CHECKBOX = 25;
+export const CHAPTER_CLEAR_BONUS_XP = 50;

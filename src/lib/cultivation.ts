@@ -14,6 +14,10 @@ import {
   StudyLog,
   MatingCompatibility,
   CertificationMaster,
+  CustomCertificationMeta,
+  PhaseThresholds,
+  MushroomSpeciesId,
+  StudyRoadmap,
 } from "./types";
 import { getCertificationById, getMushroomSpecies } from "./masterdata";
 
@@ -199,7 +203,7 @@ export function calculatePoints(
  */
 export function determineGrowthPhase(
   cultivation: Cultivation,
-  cert: CertificationMaster
+  cert: { phaseThresholds: PhaseThresholds }
 ): GrowthPhase {
   const { totalInputPoints, totalOutputPoints } = cultivation;
   const t = cert.phaseThresholds;
@@ -343,9 +347,26 @@ export function createInitialCultivation(
   userId: string,
   matingPartner: HarvestedMushroom | null,
   goalStatement: string = "",
+  customCert?: CustomCertificationMeta,
 ): Omit<Cultivation, "id" | "createdAt" | "updatedAt"> {
-  const cert = getCertificationById(certId);
-  if (!cert) throw new Error(`Unknown certification: ${certId}`);
+  let cert: {
+    domains: DomainValues;
+    mushroomSpeciesId: MushroomSpeciesId;
+    phaseThresholds: PhaseThresholds;
+  } | undefined;
+
+  if (certId === "custom") {
+    if (!customCert) throw new Error("Custom certification requires customCert meta");
+    cert = {
+      domains: customCert.domains,
+      mushroomSpeciesId: customCert.mushroomSpeciesId,
+      phaseThresholds: customCert.phaseThresholds,
+    };
+  } else {
+    const master = getCertificationById(certId);
+    if (!master) throw new Error(`Unknown certification: ${certId}`);
+    cert = master;
+  }
 
   // 配合ボーナス計算
   let matingBonus: DomainValues = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -354,7 +375,25 @@ export function createInitialCultivation(
   let matingPartnerName: string | null = null;
 
   if (matingPartner) {
-    const compat = calculateMatingCompatibility(cert, matingPartner);
+    // 配合計算はCertificationMaster互換のdomainsがあれば成立するので、カスタムはダミーの
+    // CertificationMaster形式を組んで渡す
+    const certForCompat: CertificationMaster = (certId === "custom" && customCert)
+      ? {
+          id: "custom",
+          name: customCert.name,
+          category: "Custom",
+          mushroomSpeciesId: customCert.mushroomSpeciesId,
+          difficulty: customCert.difficulty,
+          domains: customCert.domains,
+          estimatedDays: customCert.estimatedDays,
+          description: customCert.description,
+          tips: customCert.tips,
+          prerequisiteId: null,
+          lineageGroup: "custom",
+          phaseThresholds: customCert.phaseThresholds,
+        }
+      : getCertificationById(certId)!;
+    const compat = calculateMatingCompatibility(certForCompat, matingPartner);
     if (compat.compatibilityLevel !== "incompatible") {
       matingBonus = compat.predictedBonus;
       sharedDomainCount = compat.sharedDomainCount;
@@ -370,7 +409,7 @@ export function createInitialCultivation(
 
   const today = new Date().toISOString().split("T")[0];
 
-  return {
+  const base: Omit<Cultivation, "id" | "createdAt" | "updatedAt"> = {
     userId,
     certificationId: certId,
     mushroomSpeciesId: cert.mushroomSpeciesId,
@@ -398,6 +437,10 @@ export function createInitialCultivation(
     isCompleted: false,
     completedDate: null,
   };
+  if (certId === "custom" && customCert) {
+    base.customCert = customCert;
+  }
+  return base;
 }
 
 // ============================================
@@ -412,7 +455,12 @@ export function updateCultivationWithLog(
   newLog: StudyLog,
   allLogs: StudyLog[]
 ): Partial<Cultivation> {
-  const cert = getCertificationById(cultivation.certificationId);
+  // カスタム資格の場合は customCert から閾値等を読む
+  const cert = cultivation.certificationId === "custom" && cultivation.customCert
+    ? {
+        phaseThresholds: cultivation.customCert.phaseThresholds,
+      }
+    : getCertificationById(cultivation.certificationId);
   if (!cert) return {};
 
   // ポイント再計算（体調・充実感を反映、日次上限を適用）
@@ -668,8 +716,9 @@ export function evaluateAchievements(context: {
   harvested: HarvestedMushroom[];
   allLogs: StudyLog[];
   totalStudyMinutes: number;
+  roadmaps?: StudyRoadmap[];
 }): string[] {
-  const { cultivations, harvested, allLogs, totalStudyMinutes } = context;
+  const { cultivations, harvested, allLogs, totalStudyMinutes, roadmaps = [] } = context;
   const unlocked: string[] = [];
 
   // ─── 栽培系 ───
@@ -739,6 +788,33 @@ export function evaluateAchievements(context: {
   if (uniqueSubTypes.size >= 5) unlocked.push("variety_5");
   if (uniqueSubTypes.size >= 10) unlocked.push("variety_10");
 
+  // ─── ロードマップ系 ───
+  let roadmapCompletedTasks = 0;
+  let roadmapCompletedChapters = 0;
+  let roadmapFullyCompleted = 0;
+  for (const r of roadmaps) {
+    let totalTasks = 0;
+    let completedTasks = 0;
+    for (const ch of r.chapters) {
+      let chapterHasTasks = false;
+      let chapterAllDone = true;
+      for (const t of ch.tasks) {
+        totalTasks++;
+        chapterHasTasks = true;
+        if (t.isCompleted) completedTasks++;
+        else chapterAllDone = false;
+      }
+      if (chapterHasTasks && chapterAllDone) roadmapCompletedChapters++;
+    }
+    roadmapCompletedTasks += completedTasks;
+    if (totalTasks > 0 && completedTasks === totalTasks) roadmapFullyCompleted++;
+  }
+  if (roadmapCompletedTasks >= 1) unlocked.push("roadmap_first_task");
+  if (roadmapCompletedChapters >= 1) unlocked.push("roadmap_first_chapter");
+  if (roadmapCompletedTasks >= 10) unlocked.push("roadmap_tasks_10");
+  if (roadmapCompletedTasks >= 50) unlocked.push("roadmap_tasks_50");
+  if (roadmapFullyCompleted >= 1) unlocked.push("roadmap_complete");
+
   return unlocked;
 }
 
@@ -751,7 +827,9 @@ export function createHarvestedMushroom(
   return {
     userId: cultivation.userId,
     certificationId: cultivation.certificationId,
-    certificationName: getCertificationById(cultivation.certificationId)?.name ?? "",
+    certificationName: cultivation.certificationId === "custom"
+      ? (cultivation.customCert?.name ?? "自由目標")
+      : (getCertificationById(cultivation.certificationId)?.name ?? ""),
     mushroomSpeciesId: cultivation.mushroomSpeciesId,
     finalDomainValues: [...cultivation.currentDomainValues] as unknown as DomainValues,
     finalMorphology: { ...cultivation.morphology },

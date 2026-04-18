@@ -46,6 +46,12 @@ export default function Header() {
             ランキング
           </Link>
           <Link
+            href="/ai-guide"
+            className="text-gray-300 hover:text-white text-sm transition-colors"
+          >
+            AI学習
+          </Link>
+          <Link
             href="/mypage"
             className="text-gray-300 hover:text-white text-sm transition-colors"
           >
@@ -138,6 +144,13 @@ export default function Header() {
               className="text-gray-300 hover:text-white text-sm py-2"
             >
               🏆 ランキング
+            </Link>
+            <Link
+              href="/ai-guide"
+              onClick={() => setMenuOpen(false)}
+              className="text-gray-300 hover:text-white text-sm py-2"
+            >
+              🤖 AI学習
             </Link>
             <Link
               href="/mypage"

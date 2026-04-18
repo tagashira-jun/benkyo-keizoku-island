@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { getUserCultivations, getUserHarvestedMushrooms } from "@/lib/firestore";
-import { getCertificationById, getMushroomSpecies, ACHIEVEMENTS, DOMAIN_LIST } from "@/lib/masterdata";
+import { getCertificationById, getMushroomSpecies, ACHIEVEMENTS, DOMAIN_LIST, resolveCultivationCert } from "@/lib/masterdata";
 import { PHASE_NAMES } from "@/lib/types";
 import type { Cultivation, HarvestedMushroom } from "@/lib/types";
 import MushroomSVG from "@/components/mushroom/MushroomSVG";
@@ -125,7 +125,7 @@ function HomeContent() {
   }
 
   const activeCultivation = selectedCultivation;
-  const cert = activeCultivation ? getCertificationById(activeCultivation.certificationId) : null;
+  const cert = activeCultivation ? resolveCultivationCert(activeCultivation) : null;
   const species = activeCultivation ? getMushroomSpecies(activeCultivation.mushroomSpeciesId) : null;
 
   // 関連知識レベル（0〜3）：過去の収穫キノコと現在栽培中の共通ドメイン数から算出
@@ -172,10 +172,18 @@ function HomeContent() {
       {/* ヘッダーバー */}
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between">
         <h1 className="text-lg font-bold text-emerald-300">Kinoko Lab</h1>
-        <div className="flex gap-4 text-sm">
+        <div className="flex gap-4 text-sm items-center">
           <button onClick={() => setShowTutorial(true)} className="text-gray-300 hover:text-white">使い方</button>
           <Link href="/room" className="text-gray-200 hover:text-white">部屋</Link>
           <Link href="/mypage" className="text-gray-200 hover:text-white">マイページ</Link>
+          <Link
+            href="/release-notes"
+            title="リリースノート"
+            aria-label="リリースノート"
+            className="w-8 h-8 rounded-full bg-gray-800 hover:bg-gray-700 text-emerald-300 flex items-center justify-center text-base leading-none transition"
+          >
+            📋
+          </Link>
         </div>
       </div>
 
@@ -287,27 +295,33 @@ function HomeContent() {
         {/* 栽培中キノコの選択タブ */}
         {cultivations.length > 0 && (
           <>
-            {cultivations.length > 1 && (
-              <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-                {cultivations.map((c) => {
-                  const cCert = getCertificationById(c.certificationId);
-                  const isSelected = selectedCultivation?.id === c.id;
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => setSelectedCultivation(c)}
-                      className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition ${
-                        isSelected
-                          ? "bg-emerald-600 text-white"
-                          : "bg-gray-800 text-gray-200 hover:bg-gray-700"
-                      }`}
-                    >
-                      {cCert?.name ?? "不明"}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 items-center">
+              {cultivations.map((c) => {
+                const cCert = resolveCultivationCert(c);
+                const isSelected = selectedCultivation?.id === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => setSelectedCultivation(c)}
+                    className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition ${
+                      isSelected
+                        ? "bg-emerald-600 text-white"
+                        : "bg-gray-800 text-gray-200 hover:bg-gray-700"
+                    }`}
+                  >
+                    {cCert?.name ?? "不明"}
+                  </button>
+                );
+              })}
+              <Link
+                href="/cultivate/new"
+                title="新しい栽培を始める"
+                aria-label="新しい栽培を始める"
+                className="shrink-0 w-8 h-8 rounded-full bg-amber-500/15 border border-dashed border-amber-500/70 text-amber-300 hover:bg-amber-500/25 hover:text-amber-200 flex items-center justify-center text-lg leading-none transition"
+              >
+                +
+              </Link>
+            </div>
 
             {/* 無理しすぎ警告 */}
             {activeCultivation?.conditionWarning && (
@@ -465,19 +479,49 @@ function HomeContent() {
 
             {/* アクションボタン */}
             <div className="grid grid-cols-2 gap-3 mb-6">
+              {activeCultivation ? (
+                <Link
+                  href={`/roadmap/${activeCultivation.id}`}
+                  className="flex flex-col items-center justify-center gap-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl py-3 text-center font-medium"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span>🗺</span>
+                    <span>学習ロードマップ</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-100/80 font-normal">章ごとに進捗を管理</span>
+                </Link>
+              ) : (
+                <div className="bg-gray-800/60 text-gray-500 rounded-xl py-3 text-center font-medium cursor-not-allowed">
+                  🗺 学習ロードマップ
+                </div>
+              )}
               <Link
                 href={`/record${activeCultivation ? `?cultivationId=${activeCultivation.id}` : ""}`}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl py-3 text-center font-medium"
+                className="flex flex-col items-center justify-center gap-0.5 bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-3 text-center font-medium"
               >
-                学習を記録する
-              </Link>
-              <Link
-                href="/cultivate/new"
-                className="bg-gray-800 hover:bg-gray-700 text-white rounded-xl py-3 text-center font-medium"
-              >
-                新しい栽培を始める
+                <span className="flex items-center gap-1.5">
+                  <span>📝</span>
+                  <span>学習を記録する</span>
+                </span>
+                <span className="text-[10px] text-gray-400 font-normal">ロードマップなしで自由に</span>
               </Link>
             </div>
+
+            {/* AI学習ガイドへの導線 */}
+            <Link
+              href="/ai-guide"
+              className="mt-3 flex items-center justify-between bg-gradient-to-r from-emerald-950/60 to-gray-900/60 hover:from-emerald-900/60 hover:to-gray-800/60 border border-emerald-800/60 rounded-xl px-4 py-3 transition"
+            >
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-emerald-200 flex items-center gap-1.5">
+                  🤖 AIと一緒に学ぶガイド
+                </div>
+                <div className="text-[11px] text-emerald-100/70 mt-0.5">
+                  NotebookLMで教材作成 → ポモドーロ学習 → 理解度チェックまで
+                </div>
+              </div>
+              <span className="shrink-0 text-emerald-300 text-sm ml-2">→</span>
+            </Link>
           </>
         )}
 

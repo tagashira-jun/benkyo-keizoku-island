@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useRef, Suspense } from "react";
 import { getUserCultivations, addStudyLog, getStudyLogsByCultivation } from "@/lib/firestore";
-import { getCertificationById } from "@/lib/masterdata";
+import { resolveCultivationCert } from "@/lib/masterdata";
 import { MINUTES_OPTIONS, INPUT_SUGGESTIONS, OUTPUT_SUGGESTIONS, CONDITION_OPTIONS, FULFILLMENT_OPTIONS } from "@/lib/types";
 import type { Cultivation, StudyLog } from "@/lib/types";
 import Link from "next/link";
@@ -40,6 +40,22 @@ function RecordContent() {
   const [recentLogs, setRecentLogs] = useState<StudyLog[]>([]);
   const [customHistory, setCustomHistory] = useState<{ input: string[]; output: string[] }>({ input: [], output: [] });
   const suggestionsRef = useRef<HTMLDivElement>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const seen = localStorage.getItem("kinoko_tutorial_record_v1");
+    if (!seen) setShowTutorial(true);
+  }, []);
+
+  function closeRecordTutorial() {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("kinoko_tutorial_record_v1", "1");
+    }
+    setShowTutorial(false);
+    setTutorialStep(0);
+  }
 
   useEffect(() => {
     if (!firebaseUser) return;
@@ -223,7 +239,17 @@ function RecordContent() {
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center gap-3">
         <Link href="/" className="text-gray-400 hover:text-white text-sm">&larr; 戻る</Link>
         <h1 className="text-lg font-bold text-emerald-400">学習記録</h1>
+        <button
+          onClick={() => { setShowTutorial(true); setTutorialStep(0); }}
+          className="ml-auto text-xs text-gray-400 hover:text-white"
+        >
+          使い方
+        </button>
       </div>
+
+      {showTutorial && (
+        <RecordTutorial step={tutorialStep} setStep={setTutorialStep} onClose={closeRecordTutorial} />
+      )}
 
       <div className="max-w-lg mx-auto px-4 py-6">
         {/* 停止ポイント通知（ウェルビーイング） */}
@@ -260,7 +286,7 @@ function RecordContent() {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white"
             >
               {cultivations.map((c) => {
-                const cert = getCertificationById(c.certificationId);
+                const cert = resolveCultivationCert(c);
                 return <option key={c.id} value={c.id}>{cert?.name ?? "不明"}</option>;
               })}
             </select>
@@ -352,6 +378,20 @@ function RecordContent() {
             {pomoStatus && (
               <div className="mt-3 bg-orange-900/40 border border-orange-700 rounded-lg px-4 py-2 text-orange-200 text-center text-sm">
                 {pomoStatus}
+              </div>
+            )}
+            {pomoPending != null && (
+              <div className="mt-3 bg-emerald-950/40 border border-emerald-800 rounded-lg px-4 py-3 text-sm">
+                <div className="text-emerald-200 font-semibold mb-1">📚 学習の定着には理解度チェックが効果的</div>
+                <p className="text-xs text-emerald-100/80 mb-2">
+                  NotebookLMを使った25分の理解度チェック手順を用意しています。
+                </p>
+                <Link
+                  href="/ai-guide#step-5"
+                  className="inline-flex items-center gap-1 text-xs text-emerald-300 hover:text-emerald-200 underline"
+                >
+                  🤖 AI学習ガイドを開く →
+                </Link>
               </div>
             )}
             {pomoPending == null && (
@@ -586,6 +626,98 @@ function RecordContent() {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function RecordTutorial({
+  step,
+  setStep,
+  onClose,
+}: {
+  step: number;
+  setStep: (n: number) => void;
+  onClose: () => void;
+}) {
+  const steps = [
+    {
+      emoji: "📝",
+      title: "学習記録の2つのモード",
+      body: "『手動で記録』は後から振り返って記録するモード。『ポモドーロタイマー』は25分作業＋5分休憩を計測しながら記録するモード（記録時に+30%ボーナス）。どちらも15分単位で記録します。",
+    },
+    {
+      emoji: "📚",
+      title: "インプットとアウトプットの違い",
+      body: "インプット＝参考書・動画・講義など『受け取る学習』。アウトプット＝問題演習・模擬試験・ブログ執筆など『出す学習』。体型に反映されるので、理想の6:4バランスを意識してみてください。",
+    },
+    {
+      emoji: "❤️",
+      title: "体調・充実感を正直に",
+      body: "無理した日は体調スコアを低く、はかどった日は充実感を高く。体調が悪い日が続くとキノコに警告が出て、充実感が高い日はポイントが+30%ブーストされます。誇張せず、ありのままで。",
+    },
+    {
+      emoji: "🍅",
+      title: "ポモドーロは画面を離れても大丈夫",
+      body: "タイマーを開始したあとブラウザを閉じたり他ページに移っても、戻ってきたときに自動で経過時間が反映されます。集中を妨げずに他の作業もできます。",
+    },
+    {
+      emoji: "🗺",
+      title: "ロードマップの章と連動",
+      body: "ホームから『学習ロードマップ』を開くとGeminiで作った学習章立てがTODOになっています。25分タスクはポモドーロ、それ以上はチェックボックスで進捗管理できます。",
+    },
+  ];
+  const current = steps[step];
+  const isLast = step === steps.length - 1;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+      <div className="bg-gray-900 border border-emerald-700/50 rounded-2xl max-w-md w-full p-6">
+        <div className="text-center mb-4">
+          <div className="text-5xl mb-2">{current.emoji}</div>
+          <h2 className="text-lg font-bold text-emerald-300">{current.title}</h2>
+        </div>
+        <p className="text-sm text-gray-200 leading-relaxed mb-5">{current.body}</p>
+        <div className="flex justify-center gap-1.5 mb-5">
+          {steps.map((_, i) => (
+            <div
+              key={i}
+              className={`w-2 h-2 rounded-full transition ${
+                i === step ? "bg-emerald-400" : i < step ? "bg-emerald-700" : "bg-gray-700"
+              }`}
+            />
+          ))}
+        </div>
+        <div className="flex gap-2">
+          {step > 0 && (
+            <button
+              onClick={() => setStep(step - 1)}
+              className="flex-1 py-2 rounded-lg bg-gray-800 text-gray-200 hover:bg-gray-700 text-sm"
+            >
+              戻る
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 rounded-lg bg-gray-800 text-gray-400 hover:bg-gray-700 text-sm"
+          >
+            スキップ
+          </button>
+          {!isLast ? (
+            <button
+              onClick={() => setStep(step + 1)}
+              className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium"
+            >
+              次へ
+            </button>
+          ) : (
+            <button
+              onClick={onClose}
+              className="flex-1 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium"
+            >
+              記録を始める
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
