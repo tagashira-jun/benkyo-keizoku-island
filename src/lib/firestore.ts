@@ -671,6 +671,20 @@ export async function toggleRoadmapTask(params: {
   return { totalXpGained: xpGained, chapterCleared, updatedChapters };
 }
 
+/** ロードマップの章配列を任意に置き換える（編集用）。進捗数値も再計算する。 */
+export async function updateRoadmapChapters(params: {
+  roadmapId: string;
+  chapters: RoadmapChapter[];
+}): Promise<void> {
+  const { total, completed } = countTasks(params.chapters);
+  await updateDoc(doc(db(), "roadmaps", params.roadmapId), {
+    chapters: params.chapters,
+    totalTaskCount: total,
+    completedTaskCount: completed,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 /** ポモドーロ完了時にタスクの pomodoroCount を+1する（表示用） */
 export async function incrementTaskPomodoro(params: {
   roadmapId: string;

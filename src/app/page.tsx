@@ -3,10 +3,10 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { getUserCultivations, getUserHarvestedMushrooms } from "@/lib/firestore";
+import { getUserCultivations, getUserHarvestedMushrooms, getUserStudyLogs } from "@/lib/firestore";
 import { getCertificationById, getMushroomSpecies, ACHIEVEMENTS, DOMAIN_LIST, resolveCultivationCert } from "@/lib/masterdata";
 import { PHASE_NAMES } from "@/lib/types";
-import type { Cultivation, HarvestedMushroom } from "@/lib/types";
+import type { Cultivation, HarvestedMushroom, StudyLog } from "@/lib/types";
 import MushroomSVG from "@/components/mushroom/MushroomSVG";
 import Link from "next/link";
 
@@ -17,7 +17,10 @@ function HomeContent() {
 
   const [cultivations, setCultivations] = useState<Cultivation[]>([]);
   const [harvested, setHarvested] = useState<HarvestedMushroom[]>([]);
+  const [recentLogs, setRecentLogs] = useState<StudyLog[]>([]);
   const [selectedCultivation, setSelectedCultivation] = useState<Cultivation | null>(null);
+  // 選択中の栽培を記憶するための localStorage キー（画面を離れて戻ったときに復元）
+  const SELECTED_CULTIVATION_KEY = "kinoko_selected_cultivation_id";
   const [loadingData, setLoadingData] = useState(true);
   const [pulseSvg, setPulseSvg] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
@@ -69,7 +72,12 @@ function HomeContent() {
   useEffect(() => {
     if (!updated || !updatedCultivationId || cultivations.length === 0) return;
     const target = cultivations.find(c => c.id === updatedCultivationId);
-    if (target) setSelectedCultivation(target);
+    if (target) {
+      setSelectedCultivation(target);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(SELECTED_CULTIVATION_KEY, target.id);
+      }
+    }
     setPulseSvg(true);
     const timer = setTimeout(() => setPulseSvg(false), 2500);
     return () => clearTimeout(timer);
@@ -88,14 +96,24 @@ function HomeContent() {
     if (!firebaseUser) return;
     setLoadingData(true);
     try {
-      const [culti, harv] = await Promise.all([
+      const [culti, harv, logs] = await Promise.all([
         getUserCultivations(firebaseUser.uid),
         getUserHarvestedMushrooms(firebaseUser.uid),
+        getUserStudyLogs(firebaseUser.uid, 30),
       ]);
       setCultivations(culti);
       setHarvested(harv);
+      setRecentLogs(logs);
       if (culti.length > 0 && !selectedCultivation) {
-        setSelectedCultivation(culti[0]);
+        // 前回ユーザーが選んでいた栽培を localStorage から復元する
+        let restored: Cultivation | null = null;
+        if (typeof window !== "undefined") {
+          const savedId = window.localStorage.getItem(SELECTED_CULTIVATION_KEY);
+          if (savedId) {
+            restored = culti.find((c) => c.id === savedId) ?? null;
+          }
+        }
+        setSelectedCultivation(restored ?? culti[0]);
       }
     } finally {
       setLoadingData(false);
@@ -302,7 +320,12 @@ function HomeContent() {
                 return (
                   <button
                     key={c.id}
-                    onClick={() => setSelectedCultivation(c)}
+                    onClick={() => {
+                      setSelectedCultivation(c);
+                      if (typeof window !== "undefined") {
+                        window.localStorage.setItem(SELECTED_CULTIVATION_KEY, c.id);
+                      }
+                    }}
                     className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition ${
                       isSelected
                         ? "bg-emerald-600 text-white"
@@ -522,6 +545,46 @@ function HomeContent() {
               </div>
               <span className="shrink-0 text-emerald-300 text-sm ml-2">→</span>
             </Link>
+
+            {/* 勉強記録ログ */}
+            {recentLogs.length > 0 && (
+              <div className="mt-5">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm text-gray-200 font-medium">📜 勉強記録ログ</h3>
+                  <span className="text-[11px] text-gray-500">直近 {Math.min(recentLogs.length, 30)} 件</span>
+                </div>
+                <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
+                  {recentLogs.slice(0, 30).map((log) => {
+                    const c = cultivations.find((c) => c.id === log.cultivationId);
+                    const cCert = c ? resolveCultivationCert(c) : null;
+                    return (
+                      <div
+                        key={log.id}
+                        className="bg-gray-900 border border-gray-800/60 rounded-lg px-3 py-2 text-xs flex items-center gap-2"
+                      >
+                        <span className="text-gray-500 shrink-0 tabular-nums w-[70px]">{log.date}</span>
+                        <span
+                          className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            log.type === "input"
+                              ? "bg-blue-900/60 text-blue-200"
+                              : "bg-orange-900/60 text-orange-200"
+                          }`}
+                        >
+                          {log.type === "input" ? "IN" : "OUT"}
+                        </span>
+                        {log.isPomodoro && (
+                          <span className="shrink-0 text-[10px]" title="ポモドーロ記録">🍅</span>
+                        )}
+                        <span className="text-gray-300 flex-1 min-w-0 truncate" title={log.subType}>
+                          {log.subType || (cCert?.name ?? "記録")}
+                        </span>
+                        <span className="text-white font-medium shrink-0">{log.minutes}分</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </>
         )}
 

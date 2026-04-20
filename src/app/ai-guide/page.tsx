@@ -97,7 +97,7 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <section id={id} className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-4 scroll-mt-20">
+    <section id={id ?? `step-${step}`} className="bg-gray-900 border border-gray-800 rounded-2xl p-5 mb-4 scroll-mt-20">
       <div className="flex items-center gap-3 mb-3">
         <span className="shrink-0 w-8 h-8 rounded-full bg-emerald-600 text-white text-sm font-bold flex items-center justify-center">
           {step}
@@ -160,7 +160,7 @@ function AiGuideInner() {
               )}
             </div>
             <p className="text-xs text-emerald-200/80 mt-3 leading-relaxed">
-              NotebookLM のウェブソース機能で関連情報を集め、生成されるレポート・クイズで学習します。
+              NotebookLM のウェブソース機能で関連情報を集め、生成されるマインドマップ・クイズで学習します。
               学習開始時は<strong className="text-emerald-200">ロードマップの「▶ 開始」ボタン</strong>からポモドーロを走らせてください。
             </p>
           </div>
@@ -218,14 +218,19 @@ function AiGuideInner() {
           <CopyBlock label="補助ソース生成プロンプト" text={sourcePrompt} />
         </SectionCard>
 
-        {/* STEP 4: レポート生成 */}
-        <SectionCard step="4" title="NotebookLMの「レポート」機能で要約を作る" minutes="約3分">
+        {/* STEP 4: マインドマップで対話学習 */}
+        <SectionCard step="4" title="NotebookLMの「マインドマップ」で全体像をつかむ" minutes="約5分">
           <p>
-            ソースが揃ったら、ノートブック画面の<strong className="text-emerald-300">「レポート」</strong>ボタンから
-            「ブリーフィング資料」「スタディガイド」「タイムライン」などをそのまま生成します。
+            ソースが揃ったら、ノートブック画面の<strong className="text-emerald-300">「マインドマップ」</strong>ボタンから
+            テーマの全体像をツリー状に展開します。中心テーマから枝分かれする主要トピックが一望でき、理解の抜けがひと目で分かります。
           </p>
+          <ol className="list-decimal list-inside text-sm space-y-1.5">
+            <li>気になるノード（トピック）をクリックすると、その場でNotebookLMが詳細を解説してくれます</li>
+            <li>解説を読んだら、さらに深掘りしたい点をチャットで追質問して対話する</li>
+            <li>「なぜ？」「具体例は？」「他との違いは？」と問いを重ねて理解度を高めましょう</li>
+          </ol>
           <p className="text-xs text-gray-400">
-            標準の出力で十分なので、追加のプロンプト入力は不要です。気になる観点があれば、生成後にチャットで質問を追記して深掘りしましょう。
+            レポートで一方的に読むよりも、自分の興味に沿って枝を辿り、能動的に対話しながら学べます。
           </p>
         </SectionCard>
 
@@ -233,7 +238,7 @@ function AiGuideInner() {
         <SectionCard step="5" title="ロードマップに戻ってポモドーロ学習を開始" minutes="25分">
           <p>
             準備ができたら<strong className="text-emerald-300">ロードマップ画面の「▶ 開始」ボタン</strong>を押して、
-            NotebookLMで生成したレポートを読みながら25分の学習を開始します。
+            NotebookLMのマインドマップを辿りながら25分の学習を開始します。
           </p>
           <Link
             href="/"

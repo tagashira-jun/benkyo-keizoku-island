@@ -10,6 +10,7 @@ import {
   incrementTaskPomodoro,
   addStudyLog,
   checkAndUnlockAchievements,
+  updateRoadmapChapters,
 } from "@/lib/firestore";
 import { resolveCultivationCert, getAchievementById } from "@/lib/masterdata";
 import { isChapterComplete } from "@/lib/roadmap";
@@ -37,6 +38,10 @@ export default function RoadmapPage() {
   const [tutorialStep, setTutorialStep] = useState(0);
   const pomoRef = useRef<PomodoroTimerHandle>(null);
   const [pomoPending, setPomoPending] = useState<number | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [savingEdits, setSavingEdits] = useState(false);
+
+  const activeTaskKey = roadmap ? `kinoko_active_roadmap_task_${roadmap.id}` : null;
 
   // 初回訪問チュートリアル
   useEffect(() => {
@@ -73,22 +78,119 @@ export default function RoadmapPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firebaseUser, cultivationId]);
 
+  // ロードマップ取得後、進行中のタスクを localStorage から復元する
+  // （別画面に離れて戻ってきたときにタイマーを自動で再表示するため）
+  useEffect(() => {
+    if (!roadmap || typeof window === "undefined") return;
+    const key = `kinoko_active_roadmap_task_${roadmap.id}`;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { chapterId: string; taskId: string };
+      const chapter = roadmap.chapters.find((c) => c.id === parsed.chapterId);
+      const task = chapter?.tasks.find((t) => t.id === parsed.taskId);
+      if (chapter && task) {
+        setActiveTask({ chapterId: parsed.chapterId, taskId: parsed.taskId });
+      } else {
+        window.localStorage.removeItem(key);
+      }
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roadmap?.id]);
+
+  // activeTask の変更を localStorage に同期
+  useEffect(() => {
+    if (!activeTaskKey || typeof window === "undefined") return;
+    try {
+      if (activeTask) {
+        window.localStorage.setItem(activeTaskKey, JSON.stringify(activeTask));
+      } else {
+        window.localStorage.removeItem(activeTaskKey);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [activeTask, activeTaskKey]);
+
   const cert = cultivation ? resolveCultivationCert(cultivation) : null;
 
   const stats = useMemo(() => {
-    if (!roadmap) return { total: 0, completed: 0, chapters: 0, chaptersClear: 0 };
+    if (!roadmap) return { total: 0, completed: 0, chapters: 0, chaptersClear: 0, pomodoroCycles: 0 };
     let total = 0;
     let completed = 0;
     let chaptersClear = 0;
+    let pomodoroCycles = 0;
     for (const c of roadmap.chapters) {
       for (const t of c.tasks) {
         total++;
         if (t.isCompleted) completed++;
+        pomodoroCycles += t.pomodoroCount ?? 0;
       }
       if (isChapterComplete(c)) chaptersClear++;
     }
-    return { total, completed, chapters: roadmap.chapters.length, chaptersClear };
+    return { total, completed, chapters: roadmap.chapters.length, chaptersClear, pomodoroCycles };
   }, [roadmap]);
+
+  async function persistChapters(nextChapters: RoadmapChapter[]) {
+    if (!roadmap) return;
+    setRoadmap({ ...roadmap, chapters: nextChapters });
+    setSavingEdits(true);
+    try {
+      await updateRoadmapChapters({ roadmapId: roadmap.id, chapters: nextChapters });
+    } catch {
+      showToast("保存に失敗しました");
+      reload();
+    } finally {
+      setSavingEdits(false);
+    }
+  }
+
+  function renameChapter(chapterId: string, nextTitle: string) {
+    if (!roadmap) return;
+    const trimmed = nextTitle.trim();
+    if (!trimmed) return;
+    const target = roadmap.chapters.find((c) => c.id === chapterId);
+    if (!target || target.title === trimmed) return;
+    const next = roadmap.chapters.map((c) =>
+      c.id === chapterId ? { ...c, title: trimmed } : c,
+    );
+    void persistChapters(next);
+  }
+
+  function renameTask(chapterId: string, taskId: string, nextTitle: string) {
+    if (!roadmap) return;
+    const trimmed = nextTitle.trim();
+    if (!trimmed) return;
+    const chapter = roadmap.chapters.find((c) => c.id === chapterId);
+    const task = chapter?.tasks.find((t) => t.id === taskId);
+    if (!task || task.title === trimmed) return;
+    const next = roadmap.chapters.map((c) =>
+      c.id === chapterId
+        ? { ...c, tasks: c.tasks.map((t) => (t.id === taskId ? { ...t, title: trimmed } : t)) }
+        : c,
+    );
+    void persistChapters(next);
+  }
+
+  function deleteChapter(chapterId: string) {
+    if (!roadmap) return;
+    if (typeof window !== "undefined" && !window.confirm("この章を削除しますか？章内の全タスクも削除されます。")) return;
+    const next = roadmap.chapters.filter((c) => c.id !== chapterId);
+    if (activeTask?.chapterId === chapterId) setActiveTask(null);
+    void persistChapters(next);
+  }
+
+  function deleteTask(chapterId: string, taskId: string) {
+    if (!roadmap) return;
+    if (typeof window !== "undefined" && !window.confirm("このタスクを削除しますか？")) return;
+    const next = roadmap.chapters.map((c) =>
+      c.id === chapterId ? { ...c, tasks: c.tasks.filter((t) => t.id !== taskId) } : c,
+    );
+    if (activeTask?.taskId === taskId) setActiveTask(null);
+    void persistChapters(next);
+  }
 
   async function handleToggle(task: RoadmapTask, chapter: RoadmapChapter) {
     if (!roadmap) return;
@@ -110,6 +212,30 @@ export default function RoadmapPage() {
         nextCompleted: next,
       });
       setRoadmap({ ...roadmap, chapters: res.updatedChapters });
+      // 完了にした場合は学習記録としても残す（勉強記録ログに載せるため）
+      // ポモドーロタイマー経由の完了は handlePomodoroSave 側で記録済みなので
+      // ここでは手動チェック時のみ estimatedMinutes を学習時間として記録する。
+      if (
+        next &&
+        firebaseUser &&
+        cultivation &&
+        task.estimatedMinutes > 0
+      ) {
+        try {
+          await addStudyLog({
+            userId: firebaseUser.uid,
+            cultivationId: cultivation.id,
+            type: "input",
+            subType: chapter.title,
+            minutes: task.estimatedMinutes,
+            memo: `🗺 ${task.title}`,
+            date: new Date().toISOString().split("T")[0],
+            isPomodoro: false,
+          });
+        } catch {
+          // 学習記録の保存失敗は画面体験を壊さないよう無視
+        }
+      }
       if (next && res.chapterCleared) {
         showToast(`🎉 章「${chapter.title}」クリア！ +${50} XP ボーナス`);
       } else if (next && res.totalXpGained > 0) {
@@ -253,9 +379,20 @@ export default function RoadmapPage() {
       <div className="max-w-lg mx-auto px-4 py-5">
         {/* 進捗ヘッダー */}
         <div className="bg-gray-900 rounded-2xl p-4 mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="font-bold text-emerald-300">🗺 学習ロードマップ</h2>
-            <span className="text-xs text-gray-400">
+          <div className="flex items-center justify-between mb-2 gap-2">
+            <h2 className="font-bold text-emerald-300 shrink-0">🗺 学習ロードマップ</h2>
+            <button
+              onClick={() => setEditMode((v) => !v)}
+              className={`text-[11px] px-2 py-0.5 rounded transition shrink-0 ${
+                editMode
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-gray-800 hover:bg-gray-700 text-gray-200"
+              }`}
+              title="章やタスクの名前変更・削除ができます"
+            >
+              {editMode ? (savingEdits ? "保存中…" : "✓ 編集終了") : "✏️ 編集"}
+            </button>
+            <span className="text-xs text-gray-400 ml-auto shrink-0">
               {stats.completed} / {stats.total} タスク
             </span>
           </div>
@@ -265,7 +402,7 @@ export default function RoadmapPage() {
               style={{ width: stats.total > 0 ? `${(stats.completed / stats.total) * 100}%` : "0%" }}
             />
           </div>
-          <div className="grid grid-cols-3 gap-2 mt-3 text-center text-xs">
+          <div className="grid grid-cols-2 gap-2 mt-3 text-center text-xs">
             <div className="bg-gray-800 rounded-lg py-2">
               <div className="text-gray-400">章クリア</div>
               <div className="text-emerald-300 font-bold">{stats.chaptersClear} / {stats.chapters}</div>
@@ -279,6 +416,10 @@ export default function RoadmapPage() {
               <div className="text-emerald-300 font-bold">
                 {stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0}%
               </div>
+            </div>
+            <div className="bg-gray-800 rounded-lg py-2" title="このロードマップで回したポモドーロの合計サイクル数">
+              <div className="text-gray-400">累計サイクル</div>
+              <div className="text-orange-300 font-bold">🍅 {stats.pomodoroCycles}</div>
             </div>
           </div>
         </div>
@@ -333,13 +474,34 @@ export default function RoadmapPage() {
                   cleared ? "border-emerald-600/60" : "border-gray-800"
                 }`}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className={`font-bold ${cleared ? "text-emerald-300" : "text-white"}`}>
-                    {cleared && "✅ "}{chapter.title}
-                  </h3>
-                  <span className="text-[11px] text-gray-400">
+                <div className="flex items-center justify-between mb-2 gap-2">
+                  {editMode ? (
+                    <input
+                      defaultValue={chapter.title}
+                      onBlur={(e) => renameChapter(chapter.id, e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                      }}
+                      className="flex-1 min-w-0 bg-gray-800 border border-gray-700 focus:border-emerald-500 rounded px-2 py-1 text-sm font-bold text-white"
+                      aria-label="章のタイトル"
+                    />
+                  ) : (
+                    <h3 className={`font-bold ${cleared ? "text-emerald-300" : "text-white"} min-w-0 truncate`}>
+                      {cleared && "✅ "}{chapter.title}
+                    </h3>
+                  )}
+                  <span className="text-[11px] text-gray-400 shrink-0">
                     {chCompleted}/{chapter.tasks.length}
                   </span>
+                  {editMode && (
+                    <button
+                      onClick={() => deleteChapter(chapter.id)}
+                      className="shrink-0 text-[11px] px-1.5 py-0.5 rounded bg-red-900/50 hover:bg-red-900 text-red-200"
+                      title="この章を削除"
+                    >
+                      🗑️
+                    </button>
+                  )}
                 </div>
                 {chapter.summary && (
                   <div className="text-xs text-gray-400 italic mb-3">{chapter.summary}</div>
@@ -377,13 +539,25 @@ export default function RoadmapPage() {
                         </button>
                       )}
                       <div className="flex-1 min-w-0">
-                        <div
-                          className={`text-sm ${
-                            task.isCompleted ? "line-through text-gray-400" : "text-white"
-                          }`}
-                        >
-                          {task.title}
-                        </div>
+                        {editMode ? (
+                          <input
+                            defaultValue={task.title}
+                            onBlur={(e) => renameTask(chapter.id, task.id, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                            }}
+                            className="w-full bg-gray-900 border border-gray-700 focus:border-emerald-500 rounded px-2 py-1 text-sm text-white"
+                            aria-label="タスク名"
+                          />
+                        ) : (
+                          <div
+                            className={`text-sm ${
+                              task.isCompleted ? "line-through text-gray-400" : "text-white"
+                            }`}
+                          >
+                            {task.title}
+                          </div>
+                        )}
                         <div className="flex items-center gap-2 mt-1 text-[10px]">
                           <span
                             className={`px-1.5 py-0.5 rounded ${
@@ -400,28 +574,40 @@ export default function RoadmapPage() {
                         </div>
                       </div>
                       <div className="flex flex-col gap-1 shrink-0">
-                        {task.type === "pomodoro" && !task.isCompleted && (
+                        {editMode ? (
                           <button
-                            onClick={() => startPomodoroForTask(task, chapter)}
-                            className="text-xs bg-orange-600 hover:bg-orange-700 text-white px-2 py-1 rounded-md"
+                            onClick={() => deleteTask(chapter.id, task.id)}
+                            className="text-[11px] bg-red-900/50 hover:bg-red-900 text-red-200 px-2 py-1 rounded-md"
+                            title="このタスクを削除"
                           >
-                            ▶ 開始
+                            🗑️ 削除
                           </button>
+                        ) : (
+                          <>
+                            {task.type === "pomodoro" && !task.isCompleted && (
+                              <button
+                                onClick={() => startPomodoroForTask(task, chapter)}
+                                className="text-xs bg-orange-600 hover:bg-orange-700 text-white px-2 py-1 rounded-md"
+                              >
+                                ▶ 開始
+                              </button>
+                            )}
+                            <Link
+                              href={{
+                                pathname: "/ai-guide",
+                                query: {
+                                  cert: cert?.name ?? "",
+                                  chapter: chapter.title,
+                                  task: task.title,
+                                },
+                              }}
+                              className="text-[11px] bg-emerald-700 hover:bg-emerald-600 text-white px-2 py-1 rounded-md text-center whitespace-nowrap"
+                              title="NotebookLMで学習教材を作成する"
+                            >
+                              📚 教材を作成
+                            </Link>
+                          </>
                         )}
-                        <Link
-                          href={{
-                            pathname: "/ai-guide",
-                            query: {
-                              cert: cert?.name ?? "",
-                              chapter: chapter.title,
-                              task: task.title,
-                            },
-                          }}
-                          className="text-[11px] bg-emerald-700 hover:bg-emerald-600 text-white px-2 py-1 rounded-md text-center whitespace-nowrap"
-                          title="NotebookLMで学習教材を作成する"
-                        >
-                          📚 教材を作成
-                        </Link>
                       </div>
                     </li>
                   ))}
