@@ -1,0 +1,68 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // ユーザープロファイル
+    //  - 全認証ユーザーが read 可（他人の部屋訪問用）
+    //  - 本人のみ write 可
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(uid);
+      allow update, delete: if isOwner(uid);
+    }
+
+    // 部屋
+    //  - 全認証ユーザーが read 可（他人の部屋訪問用）
+    //  - 本人のみ write 可
+    match /rooms/{uid} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isOwner(uid);
+    }
+
+    // 栽培（オーナーのみ read/write）
+    match /cultivations/{id} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // 学習記録（オーナーのみ read/write）
+    match /studyLogs/{id} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // 収穫済みキノコ
+    //  - read は全認証ユーザー（他人の部屋に展示するため）
+    //  - write は本人のみ
+    match /harvestedMushrooms/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // 実績解除記録（オーナーのみ）
+    match /userAchievements/{id} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // ロードマップ（オーナーのみ）
+    match /roadmaps/{id} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+  }
+}

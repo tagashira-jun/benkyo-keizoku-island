@@ -676,25 +676,19 @@ function calculateStreak(sortedDates: string[]): number {
   if (sortedDates.length === 0) return 0;
 
   const today = new Date().toISOString().split("T")[0];
+  const dateSet = new Set(sortedDates);
   let streak = 0;
   let checkDate = new Date(today);
 
-  // 今日から遡って連続日数をカウント
-  for (let i = sortedDates.length - 1; i >= 0; i--) {
-    const dateStr = checkDate.toISOString().split("T")[0];
-    if (sortedDates[i] === dateStr) {
-      streak++;
-      checkDate.setDate(checkDate.getDate() - 1);
-    } else if (sortedDates[i] < dateStr) {
-      // 日付が飛んだ = 連続途切れ
-      // ただし今日まだ記録していない場合は昨日からカウント
-      if (streak === 0 && i === sortedDates.length - 1) {
-        checkDate.setDate(checkDate.getDate() - 1);
-        i++; // リトライ
-        continue;
-      }
-      break;
-    }
+  // 今日まだ記録がない場合は「昨日」起点でカウントする（連続途切れ扱いにしない）
+  if (!dateSet.has(today)) {
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+
+  // 起点日が記録になければ連続0
+  while (dateSet.has(checkDate.toISOString().split("T")[0])) {
+    streak++;
+    checkDate.setDate(checkDate.getDate() - 1);
   }
 
   return streak;
